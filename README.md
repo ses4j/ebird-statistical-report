@@ -24,3 +24,11 @@ Requirements:
 ## To run
 
 `python manage.py year_end_report -r <region_code> -y <year>` where region_code is, eg, `US-DC-001` or `US-MD`.
+
+## Existing outputs
+
+Here is the [2020 District of Columbia eBird report](https://github.com/ses4j/ebird-statistical-report/raw/main/2020%20Annual%20eBird%20Statistical%20Report%20-%20US-DC-001%20-%20v1.1.pdf), generated with this tool.
+
+Some other generated reports can be found here:
+
+https://drive.google.com/drive/folders/1UomIEXxTC4d2qzjap1W2McZqNT4SbsH7?usp=sharing

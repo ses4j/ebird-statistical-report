@@ -1,8 +1,8 @@
-Django==3.1.8
-requests==2.25.1
-psycopg2==2.8.6
-geopy==2.1.0
-numpy==1.19.5
+Django==4.0.1
+requests==2.27.1
+psycopg2==2.9.3
+geopy==2.2.0
+numpy==1.22.1
 pylatex==1.4.1
-diskcache==5.2.1
+diskcache==5.4.0
 bs4==0.0.1

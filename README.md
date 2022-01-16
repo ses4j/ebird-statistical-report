@@ -9,6 +9,8 @@ Requirements:
 
 -   Python 3.x
 -   PostgreSQL
+-   pdfLaTex or latexmk
+    - Easiest way to get this on Windows is to install https://miktex.org/download, "letter" paper, "Yes" to install packages on the fly
 -   eBird data for the region in question, access requests and downloads at https://ebird.org/data/download
 
 ## To load data
@@ -21,7 +23,12 @@ Requirements:
 -   If you have additional eBird data dumps to load, you can edit `ebird-load-ebd.sql` in the same way, then:
 -   `psql -U postgres -d template1 -f ebird-load-ebd.sql`
 
-## To run
+## To install Python requirements
+-   py -m venv .venv
+-   .venv\Scripts\activate.bat
+-   pip install -r requirements.txt
+
+## To run, once in the virtualenv
 
 `python manage.py year_end_report -r <region_code> -y <year>` where region_code is, eg, `US-DC-001` or `US-MD`.
 

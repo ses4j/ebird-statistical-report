@@ -105,6 +105,7 @@ create index ebird_county_date_idx ON "ebird" (county_code asc, observation_date
 create index ebird_locality_doy_idx ON "ebird" (locality_id asc, observation_doy asc);
 create index ebird_common_name_idx ON "ebird" (common_name asc);
 create index ebird_breeding_category_idx ON "ebird" (breeding_category) WHERE breeding_category is not NULL;
+create index ebird_observer_idx ON "ebird" (observer_id asc);
 CREATE INDEX ON "ebird" (sampling_event_identifier);
 
 VACUUM ANALYZE "ebird";

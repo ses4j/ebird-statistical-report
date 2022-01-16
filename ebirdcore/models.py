@@ -13,8 +13,9 @@ class EBird(models.Model):
         primary_key=True, max_length=50
     )  # always 45-47 characters needed (so far)
     category = models.CharField(max_length=20)  # probably 10 would be safe
-    common_name = models.CharField(max_length=70)  # some hybrids have really long names
-    subspecies_common_name = models.CharField(max_length=70)  #  ''
+    common_name = models.TextField()  # some hybrids have really long names
+    scientific_name = models.TextField()
+    subspecies_common_name = models.TextField()
     # observation_count_str = models.CharField(
     #     max_length=8
     # )  # someone saw 1.3 million auklets.
@@ -24,19 +25,14 @@ class EBird(models.Model):
     )  # someone saw 1.3 million auklets.
     # unfortunately, it can't be an= models.IntegerField()eger
     # because some are just presence/absence
-    breeding_bird_atlas_code = models.CharField(max_length=2)
-    breeding_bird_atlas_category = models.CharField(max_length=2)
-    country = models.CharField(
-        max_length=50
-    )  # long enough for "saint helena, ascension and tristan da cunha"
+    behavior_code = models.CharField(max_length=2)
+    breeding_code = models.CharField(max_length=2)
+    breeding_category = models.CharField(max_length=2)
+    country = models.TextField()
     country_code = models.CharField(max_length=2)  # alpha-2 codes
-    state = models.CharField(
-        max_length=50
-    )  # no idea if this is long enough? u.s. virgin islands may be almost 30
+    state = models.TextField()
     state_code = models.CharField(max_length=30)
-    county = models.CharField(
-        max_length=50
-    )  # no idea if this is long enough? u.s. virgin islands may be almost 30
+    county = models.TextField()
     county_code = models.CharField(max_length=30)
 
     atlas_block = models.CharField(max_length=20)  # i think max 10
@@ -87,21 +83,21 @@ class EBird(models.Model):
         return _obs.get(key, key)
 
     def get_atlas_code_desc(self):
-        if self.breeding_bird_atlas_code is None:
+        if self.breeding_code is None:
             return None
-        c = breeding_codes.get(self.breeding_bird_atlas_code.strip(), "???")
+        c = breeding_codes.get(self.breeding_code.strip(), "???")
         return c.split("–", 1)[0]
 
-    def get_breeding_bird_atlas_category_short_desc(self):
-        if self.breeding_bird_atlas_category == "C1":
+    def get_breeding_category_short_desc(self):
+        if self.breeding_category == "C1":
             return "Obs"
-        if self.breeding_bird_atlas_category == "C2":
+        if self.breeding_category == "C2":
             return "Poss"
-        if self.breeding_bird_atlas_category == "C3":
+        if self.breeding_category == "C3":
             return "Prob"
-        if self.breeding_bird_atlas_category == "C4":
+        if self.breeding_category == "C4":
             return "Conf"
-        return self.breeding_bird_atlas_category
+        return self.breeding_category
 
 
 breeding_codes = {

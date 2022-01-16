@@ -177,10 +177,10 @@ class Command(BaseCommand):
         doc.packages.append(Package("inputenc"))
 
         thanks = (
-            "Data extracted from eBird Basic Dataset. Version: EBD_relDec-2020. "
-            "Cornell Lab of Ornithology, Ithaca, New York. Dec 2020."
+            "Data extracted from eBird Basic Dataset. Version: EBD_relDec-2021. "
+            "Cornell Lab of Ornithology, Ithaca, New York. Dec 2021."
         )
-        version = "v1.1"
+        version = "v1.0"
         doc.preamble.append(
             LatexCommand(
                 "title",
@@ -630,7 +630,7 @@ class Command(BaseCommand):
         def add_to_table(title, where_clauses, sql_template):
             vals = []
             for where in where_clauses:
-                logger.debug(f"Generating {title}...")
+                logger.debug(f"Generating {title} ({where_clauses[0]})...")
                 sql = sql_template.format(where=where)
                 cols, val = execute_query(sql)
                 vals.append(val[0][0])
@@ -905,13 +905,13 @@ select get_observer_name(t.observer_id)                                         
     --    count(t.common_name)                                                                      as "Total",
        sum(case when cat = 'C4' then 3 when cat = 'C3' then 2 when cat = 'C2' then 1 else 0 end) as "Score"
 from (
-         select OBSERVER_ID, COMMON_NAME, max(BREEDING_BIRD_ATLAS_CATEGORY) as cat
+         select OBSERVER_ID, COMMON_NAME, max(BREEDING_CATEGORY) as cat
          from ebird
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and observation_date <= '{as_of}'
-           AND breeding_bird_atlas_category is not null
-           AND breeding_bird_atlas_category in ('C2', 'C3', 'C4')
+           AND breeding_category is not null
+           AND breeding_category in ('C2', 'C3', 'C4')
            {where}
          group by OBSERVER_ID, COMMON_NAME
      ) t
@@ -972,8 +972,8 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and observation_date <= '{as_of}'
-           AND breeding_bird_atlas_category is not null
-           AND breeding_bird_atlas_category in ('C2', 'C3', 'C4')
+           AND breeding_category is not null
+           AND breeding_category in ('C2', 'C3', 'C4')
            -- and PROJECT_CODE = 'EBIRD_ATL_MD_DC'
            {where}
          group by OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER
@@ -1045,14 +1045,14 @@ from (
          select 
             common_name, 
             observer_id,
-            sum(case when breeding_bird_atlas_category = 'C4' then 1 else 0 end), 
-            sum(case when breeding_bird_atlas_category = 'C3' then 1 else 0 end) 
+            sum(case when breeding_category = 'C4' then 1 else 0 end), 
+            sum(case when breeding_category = 'C3' then 1 else 0 end) 
          from ebird
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and observation_date <= '{as_of}'
-           AND breeding_bird_atlas_category is not null
-           AND breeding_bird_atlas_category in ('C3', 'C4')
+           AND breeding_category is not null
+           AND breeding_category in ('C3', 'C4')
            -- and PROJECT_CODE = 'EBIRD_ATL_MD_DC'
            {where}
          group by common_name, observer_id

@@ -27,10 +27,10 @@ UPDATE "ebird" SET observation_count = observation_count_str::int where observat
 UPDATE "ebird"
 SET geog = st_SetSRID(ST_MakePoint(longitude, LATITUDE), 4326)::geography
 where geog is null;
+VACUUM ANALYZE "ebird" (geog);
 
 UPDATE "ebird"
 SET observation_doy = extract(doy from OBSERVATION_DATE)
 where observation_doy = 0;
-
 VACUUM ANALYZE "ebird";
 

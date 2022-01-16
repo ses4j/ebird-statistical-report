@@ -8,38 +8,43 @@ the new table.  Then it will create some indexes and geo points.  Customize to s
 /*
 CREATE TABLESPACE ebird_db_space LOCATION 'C:\ebird-tablespace';
 */
-
 SET default_tablespace = ebird_db_space;
 
-\set ON_ERROR_STOP on
 
 -- Create a new database:
 
 SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = 'ebird' AND pid <> pg_backend_pid();
+DROP DATABASE if exists ebirddb_old;
 ALTER DATABASE ebirddb RENAME TO ebirddb_old;
 -- DROP DATABASE if exists "ebirddb";
+\set ON_ERROR_STOP on
 CREATE DATABASE "ebirddb" WITH ENCODING 'UTF8' TEMPLATE=template0;
 
 \c "ebirddb"
 
 DO $$
-DECLARE ebird_export_path CONSTANT VARCHAR := 'C:\ebird-tablespace\ebd_US-DC_prv_relDec-2020\ebd_US-DC_prv_relDec-2020.txt';
+DECLARE ebird_export_path CONSTANT VARCHAR := 'C:\ebird-tablespace\ebd_US-MD_prv_relDec-2021\ebd_US-MD_prv_relDec-2021.txt';
+-- DECLARE ebird_export_path CONSTANT VARCHAR := '/mnt/import-data/ebd_US-MD_prv_relDec-2020/ebd_US-MD_prv_relDec-2020.txt';
 BEGIN
 
 CREATE TABLE "ebird"
 (
     GLOBAL_UNIQUE_IDENTIFIER     char(50),         -- always 45-47 characters needed (so far)
+    LAST_EDITED_DATE  timestamp,
+    TAXONOMIC_ORDER int,
     CATEGORY                     varchar(20),      -- Probably 10 would be safe
-    COMMON_NAME                  varchar(70),      -- Some hybrids have really long names
-    SUBSPECIES_COMMON_NAME       varchar(70),      --  ''
-    OBSERVATION_COUNT_STR            varchar(8),       -- Someone saw 1.3 million Auklets.
-    BREEDING_BIRD_ATLAS_CODE     varchar(2),
-    BREEDING_BIRD_ATLAS_CATEGORY varchar(2),
-    COUNTRY                      varchar(50),      -- long enough for "Saint Helena, Ascension and Tristan da Cunha"
+    COMMON_NAME                  text,      -- Some hybrids have really long names
+    SCIENTIFIC_NAME                  text,  
+    SUBSPECIES_COMMON_NAME       text,      --  ''
+    OBSERVATION_COUNT_STR            varchar(10),       -- Someone saw 1.3 million Auklets.
+    BREEDING_CODE     varchar(2),
+    BREEDING_CATEGORY varchar(2),
+    BEHAVIOR_CODE varchar(2),
+    COUNTRY                      text,      -- long enough for "Saint Helena, Ascension and Tristan da Cunha"
     COUNTRY_CODE                 char(2),          -- alpha-2 codes
-    STATE                        varchar(50),      -- no idea if this is long enough? U.S. Virgin Islands may be almost 30
+    STATE                        text,      -- no idea if this is long enough? U.S. Virgin Islands may be almost 30
     STATE_CODE                   varchar(30),
-    COUNTY                       varchar(50),      -- no idea if this is long enough? U.S. Virgin Islands may be almost 30
+    COUNTY                       text,      -- no idea if this is long enough? U.S. Virgin Islands may be almost 30
     COUNTY_CODE                  varchar(30),
     ATLAS_BLOCK                  varchar(20),      -- i think max 10
     LOCALITY                     text,             -- unstructured/potentially long
@@ -68,8 +73,8 @@ CREATE TABLE "ebird"
 );
 
 EXECUTE( 'COPY "ebird" ' ||
-         '(GLOBAL_UNIQUE_IDENTIFIER, CATEGORY, COMMON_NAME, SUBSPECIES_COMMON_NAME, OBSERVATION_COUNT_STR, BREEDING_BIRD_ATLAS_CODE, BREEDING_BIRD_ATLAS_CATEGORY, COUNTRY, COUNTRY_CODE, STATE, STATE_CODE, COUNTY, COUNTY_CODE, ATLAS_BLOCK, LOCALITY, LOCALITY_ID, LOCALITY_TYPE, LATITUDE, LONGITUDE, OBSERVATION_DATE, TIME_OBSERVATIONS_STARTED, OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, PROTOCOL_CODE, PROJECT_CODE, DURATION_MINUTES, EFFORT_DISTANCE_KM, EFFORT_AREA_HA, NUMBER_OBSERVERS, ALL_SPECIES_REPORTED, GROUP_IDENTIFIER, HAS_MEDIA, APPROVED, REVIEWED, REASON, TRIP_COMMENTS, SPECIES_COMMENTS) ' ||
-         'FROM PROGRAM ''cut -f 1,4,5,7,9,10,11,13,14,15,16,17,18,22,23,24,25,26,27,28,29,30,31,33,34,35,36,37,38,39,40,41,42,43,44,45,46 ' || ebird_export_path || '''' ||
+         '(GLOBAL_UNIQUE_IDENTIFIER, LAST_EDITED_DATE, TAXONOMIC_ORDER, CATEGORY, COMMON_NAME, SCIENTIFIC_NAME, SUBSPECIES_COMMON_NAME, OBSERVATION_COUNT_STR, BREEDING_CODE, BREEDING_CATEGORY, BEHAVIOR_CODE, COUNTRY, COUNTRY_CODE, STATE, STATE_CODE, COUNTY, COUNTY_CODE, ATLAS_BLOCK, LOCALITY, LOCALITY_ID, LOCALITY_TYPE, LATITUDE, LONGITUDE, OBSERVATION_DATE, TIME_OBSERVATIONS_STARTED, OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, PROTOCOL_CODE, PROJECT_CODE, DURATION_MINUTES, EFFORT_DISTANCE_KM, EFFORT_AREA_HA, NUMBER_OBSERVERS, ALL_SPECIES_REPORTED, GROUP_IDENTIFIER, HAS_MEDIA, APPROVED, REVIEWED, REASON, TRIP_COMMENTS, SPECIES_COMMENTS) ' ||
+         'FROM PROGRAM ''cut -f 1,2,3,4,5,6,7,9,10,11,12,14,15,16,17,18,19,23,24,25,26,27,28,29,30,31,32,34,35,36,37,38,39,40,41,42,43,44,45,46,47 ' || ebird_export_path || '''' ||
          ' WITH (FORMAT CSV, HEADER, QUOTE E''\5'', ENCODING ''UTF8'', DELIMITER E''\t'')');
 
 END $$;
@@ -99,7 +104,7 @@ create index ebird_state_date_idx ON "ebird" (state_code asc, observation_date a
 create index ebird_county_date_idx ON "ebird" (county_code asc, observation_date asc);
 create index ebird_locality_doy_idx ON "ebird" (locality_id asc, observation_doy asc);
 create index ebird_common_name_idx ON "ebird" (common_name asc);
-create index ebird_breeding_bird_atlas_category_idx ON "ebird" (breeding_bird_atlas_category) WHERE breeding_bird_atlas_category is not NULL;
+create index ebird_breeding_category_idx ON "ebird" (breeding_category) WHERE breeding_category is not NULL;
 CREATE INDEX ON "ebird" (sampling_event_identifier);
 
 VACUUM ANALYZE "ebird";

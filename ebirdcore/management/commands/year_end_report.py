@@ -61,6 +61,7 @@ from pylatex.utils import NoEscape, bold, escape_latex, italic
 from ebirdcore.dc_ward_wkv import dc_ward_wkv
 from ebirdcore.models import EBird
 from ebirdcore.utils import get_observer_name
+from ebirdcore.sql_utils import fmt, fmtrow, format_list_of_names, namedtuplefetchall
 
 cache = Cache("cachedir")
 logger = logging.getLogger(__name__)
@@ -90,50 +91,6 @@ def comma_join(lst):
     if isinstance(lst, int):
         return str(lst)
     return ", ".join([str(_) for _ in lst])
-
-
-def replace_unknown_name_if_needed(s):
-    if s and isinstance(s, str) and s.startswith("unknown"):
-        if "," in s:
-            s_lst = [replace_unknown_name_if_needed(t.strip()) for t in s.split(",")]
-            s = ", ".join(s_lst)
-        else:
-            s = get_observer_name(s[9:-1])
-
-    return s
-
-
-def fmtrow(r):
-    return [fmt(x) for x in r]
-
-
-def fmt(s):
-    s = replace_unknown_name_if_needed(s)
-    if s and isinstance(s, str):
-        s = (
-            s.replace("\u00A0", " ")
-            .encode("latin-1", "ignore")
-            .decode("latin-1")
-            .replace(" ", "\u00A0")
-            .strip()
-        )
-    return s
-
-
-def format_list_of_names(s):
-    if s and isinstance(s, str):
-        s = s.replace("\u00A0", " ").strip()
-
-    lst = s.split(",")
-    lst = [replace_unknown_name_if_needed(s.strip()) for s in lst]
-    return ", ".join(lst)
-
-
-def namedtuplefetchall(cursor):
-    "Return all rows from a cursor as a namedtuple"
-    desc = cursor.description
-
-    return [fmtrow(row) for row in cursor.fetchall()]
 
 
 def _get_full_where_clause(
@@ -172,12 +129,6 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("-r", "--region", default="US-DC-001")
         parser.add_argument("-y", "--year", default=2020, type=int)
-        parser.add_argument(
-            "-e",
-            "--end-date",
-            default=None,
-            help="Inclusive of end-date.  Defaults to one month after start-date.",
-        )
 
     def handle(self, *args, **options):
         logging.basicConfig(level="DEBUG")
@@ -235,7 +186,7 @@ class Command(BaseCommand):
                 "title",
                 NoEscape(
                     f"Annual eBird Statistical Report\\thanks{{{escape_latex(thanks)}}} \\\\ {escape_latex(region_description)} \\\\ {year} \\\\ {escape_latex(version)}"
-                )
+                ),
             )
         )
 
@@ -298,7 +249,11 @@ class Command(BaseCommand):
                     self.year_stats(
                         region_where_clause, as_of=as_of, year=year, limit=20
                     ),
-                    self.new_birds(region_where_clause, as_of=as_of, year=year,),
+                    self.new_birds(
+                        region_where_clause,
+                        as_of=as_of,
+                        year=year,
+                    ),
                 ],
                 num_columns=1,
             )
@@ -473,10 +428,16 @@ class Command(BaseCommand):
                 doc,
                 [
                     self.top_atlas_year_lists(
-                        region_where_clause, as_of=as_of, limit=20, year=year,
+                        region_where_clause,
+                        as_of=as_of,
+                        limit=20,
+                        year=year,
                     ),
                     self.top_atlas_coded_birds(
-                        region_where_clause, as_of=as_of, limit=20, year=year,
+                        region_where_clause,
+                        as_of=as_of,
+                        limit=20,
+                        year=year,
                     ),
                 ],
                 num_columns=2,
@@ -866,7 +827,11 @@ limit {limit};
 
     @staticmethod
     def least_reported_birds(
-        region_where_clause, as_of, year=None, last_x_years=15, max_years_reported=6,
+        region_where_clause,
+        as_of,
+        year=None,
+        last_x_years=15,
+        max_years_reported=6,
     ):
         title = f"Most Infrequent Visitors of the Last {last_x_years} Years"
         subtitle = title
@@ -1102,7 +1067,10 @@ order by "#" {sort}, common_name asc;
 
     @staticmethod
     def top_all_time_everyone_year_lists(
-        region_where_clause, as_of, limit=10, with_media=False,
+        region_where_clause,
+        as_of,
+        limit=10,
+        with_media=False,
     ):
         where = ""
         subtitle = "Biggest Big Year (Everyone)"
@@ -1133,7 +1101,10 @@ limit {limit};
 
     @staticmethod
     def top_all_time_everyone_month_lists(
-        region_where_clause, as_of, limit=10, with_media=False,
+        region_where_clause,
+        as_of,
+        limit=10,
+        with_media=False,
     ):
         where = ""
         subtitle = "Biggest Big Month (Everyone)"

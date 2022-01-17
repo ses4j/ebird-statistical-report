@@ -30,8 +30,8 @@ from pylatex import (
     Section,
     StandAloneGraphic,
     Subsection,
-    Tabu,
-    Tabular,
+    Table,
+    LongTabularx,
     Tabularx,
     TextColor,
     TikZ,
@@ -39,13 +39,18 @@ from pylatex import (
     simple_page_number,
 )
 from pylatex.position import Center, FlushLeft, FlushRight
-from pylatex.table import Tabu
 from pylatex.utils import NoEscape, bold, escape_latex, italic
 
 
 cache = Cache("cachedir")
 logger = logging.getLogger(__name__)
 
+
+def get_tabular_format(i, d):
+    if i == 0:
+        return "X"
+    else:
+        return "r"
 
 def get_tabu_format(i, d):
     if i == 0:
@@ -82,14 +87,15 @@ def add_tables_in_columns(doc, table_rets, num_columns=3, rank_by_colidx=-1):
         # assert subtitle
         # with doc.create(Subsection(subtitle)):
         with doc.create(MiniPage(align="t", pos="t", width=fr"{col_width}\textwidth")):
-            if subtitle:
-                doc.append(bold(subtitle + "\n"))
+            # if subtitle:
+            #     doc.append(bold(subtitle))
             add_table(
                 doc,
                 column_desc,
                 vals,
                 rank_by_colidx=rank_by_colidx,
                 hline_every=hline_every,
+                caption=subtitle
             )
 
         if idx % num_columns == num_columns - 1:
@@ -115,14 +121,15 @@ def add_tables_in(doc, table_rets, columns, rank_by_colidx=-1):
         assert subtitle
         # with doc.create(Subsection(subtitle)):
         with doc.create(MiniPage(align="t", pos="t", width=fr"{col_width}\textwidth")):
-            doc.append(bold(subtitle + "\n"))
+            # doc.append(bold(subtitle))
             add_table(
-                doc,
-                column_desc,
-                vals,
-                rank_by_colidx=rank_by_colidx,
-                hline_every=hline_every,
-            )
+                    doc,
+                    column_desc,
+                    vals,
+                    rank_by_colidx=rank_by_colidx,
+                    hline_every=hline_every,
+                    caption=subtitle
+                )
 
         if so_far > 0.9:
             doc.append(VerticalSpace("4pt"))
@@ -183,7 +190,7 @@ def add_list_section(doc, args):
 
 
 def add_table(
-    doc, column_desc, vals, uselongtabu=False, rank_by_colidx=-1, hline_every=None
+    doc, column_desc, vals, uselongtabu=False, rank_by_colidx=-1, hline_every=None, caption=None
 ):
     def filter_private_cols(row):
         return [v for d, v in zip(column_desc, row) if not d.name.startswith("_")]
@@ -191,12 +198,17 @@ def add_table(
     header_row = [d.name for d in column_desc if not d.name.startswith("_")]
     column_def = " ".join(
         [
-            get_tabu_format(i, d)
+            get_tabular_format(i, d)
             for i, d in enumerate(column_desc)
             if not d.name.startswith("_")
         ]
     )
-    TableClass = LongTabu if uselongtabu else Tabu
+    TableClass = LongTabularx if uselongtabu else Tabularx
+    # with doc.create(Table()) as table:
+        # if caption:
+        #     table.add_caption(caption)
+    if caption:
+        doc.append(bold(caption))
     with doc.create(TableClass(column_def, booktabs=True)) as data_table:
         data_table.add_row(header_row, mapper=[bold])
         data_table.add_hline()

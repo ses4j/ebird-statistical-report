@@ -36,6 +36,21 @@ def get_observer_name(obs_id):
     return ret
 
 
+
+def add_years(d, years):
+    """Return a date that's `years` years after the date (or datetime)
+    object `d`. Return the same calendar date (month and day) in the
+    destination year, if it exists, otherwise use the following day
+    (thus changing February 29 to March 1).
+
+    http://stackoverflow.com/a/15743908/237091
+    """
+    try:
+        return d.replace(year=d.year + years)
+    except ValueError:
+        return d + (datetime.date(d.year + years, 1, 1) - datetime.date(d.year, 1, 1))
+
+
 def parse_region_code(region_code):
     region_code_split = region_code.split("-")
     if len(region_code_split) == 1:

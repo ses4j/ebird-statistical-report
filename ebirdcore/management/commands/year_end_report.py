@@ -27,6 +27,7 @@ from pylatex import (
     Command as LatexCommand,
     Document,
     Figure,
+    SubFigure,
     Foot,
     Head,
     HFill,
@@ -52,13 +53,13 @@ from pylatex import (
     simple_page_number,
 )
 from pylatex.position import Center, FlushLeft, FlushRight
-from pylatex.utils import NoEscape, bold, escape_latex, italic
+from pylatex.utils import NoEscape, bold, escape_latex, italic, fix_filename
 
 # from ebirdcore.mddcbbc_block_wkv import mddcbbc_block_wkv
 from ebirdcore.dc_ward_wkv import dc_ward_wkv
-from ebirdcore.latex_utils import add_section_description, add_tables_in_columns, add_tables_in, add_table, add_list_section, add_table_section
+from ebirdcore.latex_utils import add_section_description, add_tables_in_columns, add_tables_in, add_table, add_list_section, add_list_subsection, add_table_section
 from ebirdcore.models import EBird
-from ebirdcore.utils import get_observer_name
+from ebirdcore.utils import get_observer_name, add_years
 from ebirdcore.sql_utils import fmt, fmtrow, format_list_of_names, namedtuplefetchall
 
 cache = Cache("cachedir")
@@ -179,7 +180,7 @@ class Command(BaseCommand):
             "Data extracted from eBird Basic Dataset. Version: EBD_relDec-2021. "
             "Cornell Lab of Ornithology, Ithaca, New York. Dec 2021."
         )
-        version = "v1.0"
+        version = "v0.2 DRAFT"
         doc.preamble.append(
             LatexCommand(
                 "title",
@@ -195,25 +196,40 @@ class Command(BaseCommand):
         doc.append(NoEscape(r"\captionsetup{labelformat=empty}"))
         doc.append(NoEscape(r"\keepXColumns"))
 
-        def get_top_ranked_photo(region_code, year):
+        def get_top_ranked_photo(region_code, year, limit=1):
             import requests, shutil
 
             r = requests.get(
                 f"https://ebird.org/media/catalog.json?searchField=user&q=&regionCode={region_code}&mediaType=p&hotspot=&customRegion=&mr=M1TO12&bmo=1&emo=12&yr=YCUSTOM&by={year}&ey={year}&user=&view=Gallery&sort=rating_rank_desc&includeUnconfirmed=T&_req=&cap=no&subId=&catId=&_spec=&specId=&collectionCatalogId=&dsu=-1&action=reset_status&start=0"
             )
-            photo_data = r.json()["results"]["content"][0]
-            photo_url = photo_data["mediaUrl"]
-            common_name = photo_data["commonName"]
-            user_display_name = photo_data["userDisplayName"]
-            img_response = requests.get(photo_url, stream=True)
-            img_filename = f"top-image-{region_code}-{year}.jpg"
-            with open(img_filename, "wb") as out_file:
-                shutil.copyfileobj(img_response.raw, out_file)
-            del img_response
-            caption = f"{common_name} - The top-rated photo in {region_description} for {year} - ©{year} {user_display_name}"
-            return {"caption": caption, "image_filename": img_filename}
+            responses = []
+            used_checklists = set()
+            idx = 0
+            # breakpoint()
+            for photo_data in r.json()["results"]["content"]:
+                # photo_data = json_data[idx]
+                photo_url = photo_data["mediaUrl"]
+                common_name = photo_data["commonName"]
+                user_display_name = photo_data["userDisplayName"]
+                if photo_data['eBirdChecklistId'] in used_checklists:
+                    continue
+                used_checklists.add(photo_data['eBirdChecklistId'])
+                user_display_name = user_display_name.replace(u"\U0001F989", '')
+                img_response = requests.get(photo_url, stream=True)
+                img_filename = f"top-image-{region_code}-{year}-{idx}.jpg"
+                with open(img_filename, "wb") as out_file:
+                    shutil.copyfileobj(img_response.raw, out_file)
+                del img_response
+                caption = f"{common_name} - The top-rated photo in {region_description} for {year} - ©{year} {user_display_name}"
+                rsp = {"caption": caption, "image_filename": img_filename, "rank": idx+1, "user_display_name": user_display_name, "common_name": common_name}
+                responses.append(rsp)
+                if len(responses) >= limit:
+                    break
+                idx += 1
+            return responses
 
-        photo_data = get_top_ranked_photo(region_code=region_code, year=year)
+        top_10_photo_data = get_top_ranked_photo(region_code=region_code, year=year, limit=10)
+        photo_data = top_10_photo_data[0]
 
         with doc.create(TitlePage()):
             doc.append(NoEscape(r"\maketitle"))
@@ -231,7 +247,7 @@ class Command(BaseCommand):
             doc.append(
                 f"This is a summary report of data entered into the eBird database for the {region_description} region, intended for the amusement of area birders. "
                 "All data comes from the eBird dataset, and as such is self-reported and only sometimes reviewed or approved, so any numbers or sightings have the potential "
-                "to be incorrect. "
+                "to be incorrect. If birds are specifically marked by eBird reviewers as Exotics and so not approved, they are typically excluded from these reports. "
                 "If you have ideas for other lists or data that could be added "
                 "or have identified data discrepancies, please email scott.stafford@gmail.com. "
             )
@@ -257,347 +273,466 @@ class Command(BaseCommand):
                 ],
                 num_columns=1,
             )
-        if True:
 
-            # doc.append(NewPage())
+        doc.append(NewPage())
 
-            with doc.create(Section("Most Species Seen")):
+        with doc.create(Section("Most Species Seen")):
+            add_section_description(
+                doc,
+                "Without further ado, the grand prize: most species seen (as reported to eBird)! Note that only birds identified to species are counted. "
+                "Thus, a bird entered as 'Selasphorus sp.' (a 'spuh') or 'Glossy/White-faced Ibis' (a 'slash') will not be included. "
+                "As elsewhere in this report, All Time is necessarily limited to data that has been entered into eBird. (If your total should be higher, go add in those old Historical lists!) "
+                "Rookies are defined as anyone who has never submitted a checklist in the region before the current year.",
+            )
+            add_tables_in_columns(
+                doc,
+                [
+                    self.top_year_lists(region_where_clause, as_of=as_of, limit=20, include_change=True),
+                    self.top_year_lists(
+                        region_where_clause, as_of=as_of, limit=20, year=year
+                    ),
+                    self.top_year_lists(
+                        region_where_clause,
+                        as_of=as_of,
+                        limit=20,
+                        year=year,
+                        last_x_years=5,
+                    ),
+                    self.top_year_lists(
+                        region_where_clause,
+                        as_of=as_of,
+                        limit=20,
+                        year=year,
+                        birder_started_on_or_after_year=year,
+                    ),
+                ],
+                num_columns=2,
+            )
+
+            with doc.create(Section("Most Species Seen - All-Time Bigs")):
                 add_section_description(
                     doc,
-                    "Without further ado, the grand prize: most species seen (as reported to eBird)! Note that only birds identified to species are counted. "
-                    "Thus, a bird entered as 'Selasphorus sp.' (a 'spuh') or 'Glossy/White-faced Ibis' (a 'slash') will not be included. "
-                    "As elsewhere in this report, All Time is necessarily limited to data that has been entered into eBird. (If your total should be higher, go add in those old Historical lists!) "
-                    "Rookies are defined as anyone who has never submitted a checklist in the region before the current year.",
+                    "Here we present the all-time highest Big Year, Month, and Day -- the highest species count in a single time period. On the left are individual records. "
+                    "On the right are 'team' records, combining the species lists of all checklists posted in the region.",
+                )
+
+                limit = 15
+                add_tables_in(
+                    doc,
+                    [
+                        self.top_all_time_year_lists(
+                            region_where_clause, as_of=as_of, limit=limit
+                        ),
+                        self.top_all_time_everyone_year_lists(
+                            region_where_clause, as_of=as_of, limit=limit
+                        ),
+                        self.top_all_time_month_lists(
+                            region_where_clause, as_of=as_of, limit=limit
+                        ),
+                        self.top_all_time_everyone_month_lists(
+                            region_where_clause, as_of=as_of, limit=limit
+                        ),
+                        self.top_all_time_day_lists(
+                            region_where_clause, as_of=as_of, limit=limit
+                        ),
+                        self.top_all_time_everyone_day_lists(
+                            region_where_clause, as_of=as_of, limit=limit
+                        ),
+                    ],
+                    columns=[2, 2, 2, 2, 2, 2],
+                )
+
+            month_strs = {
+                1: "Jan",
+                2: "Feb",
+                3: "Mar",
+                4: "Apr",
+                5: "May",
+                6: "Jun",
+                7: "Jul",
+                8: "Aug",
+                9: "Sep",
+                10: "Oct",
+                11: "Nov",
+                12: "Dec",
+            }
+            
+            def another_item_formatter(doc, orig_row):
+                with doc.create(SmallText()):
+                    row = fmtrow(orig_row)
+                    val = f"{month_strs[int(row[0])]}: {row[2]} ({row[3]}) {row[1]} "
+                    doc.append(val)
+                    # doc.append(italic(row[3]))
+                    doc.append("\n")
+                    
+            
+            def another_item_formatter_with_months(doc, orig_row):
+                with doc.create(SmallText()):
+                    row = fmtrow(orig_row)
+                    val = f"{month_strs[int(row[0])]}-{int(row[1]):02d}: {row[3]} ({row[4]}) {row[2]}"
+                    doc.append(val)
+                    # doc.append(italic(row[4]))
+                    doc.append("\n")
+                    
+
+            with doc.create(Section("Most Species Seen - Off-time Bigs")):
+                add_section_description(doc, "It's never a bad day for a big day. And, lest you think big days can only be done in May, here are the best efforts at other times of year.")
+
+                add_list_subsection(
+                    doc,
+                    self.every_month_is_a_big_month(
+                        region_where_clause, as_of=as_of
+                    ),
+                    add_item_f=another_item_formatter
+                )
+                add_list_subsection(
+                    doc,
+                    self.every_day_is_a_big_day(
+                        region_where_clause, as_of=as_of
+                    ),
+                    add_item_f=another_item_formatter_with_months
+                )
+
+                # add_tables_in(
+                #     doc,
+                #     [
+                #         self.every_day_is_a_big_day(region_where_clause, as_of=as_of),
+                #         self.every_day_is_a_big_day(region_where_clause, as_of=as_of),
+                #     ],
+                #     columns=[2, 2],
+                #     rank_by_colidx=-2,
+                #     uselongtabu=True,
+                # )
+
+            with doc.create(Section("Most Species Ever on One List")):
+                add_section_description(
+                    doc,
+                    "Top scores here go to individuals with the longest Complete Stationary or Traveling lists that meet eBird checklist guidelines (max 3 hours for Stationary, 5 miles for Travelling, https://support.ebird.org/en/support/solutions/articles/48000795623-ebird-rules-and-best-practices).",
+                )
+                
+
+                def most_species_formatter(data_table, row, rowidx, column_desc, rank_by_colidx, header_row, sort_val):
+                    def filter_private_cols(row):
+                        return [v for d, v in zip(column_desc, row) if not d.name.startswith("_")]
+
+                    filtered_row = filter_private_cols(row)
+                    fmtrow = [fmt(x) for x in filtered_row]
+
+                    if rank_by_colidx is not None and hasattr(header_row[0], 'startswith') and header_row[0].startswith("Observer"):
+                        current_sort_val = filtered_row[rank_by_colidx]
+
+                        if sort_val == current_sort_val:
+                            pass
+                        else:
+                            rank = rowidx + 1
+                            sort_val = current_sort_val
+                        fmtrow[0] = f"{rank}.\u00A0{fmtrow[0]}"
+
+                    data_table.add_row(fmtrow)
+                    data_table.add_row([' & &\multicolumn{4}{l}{'+italic(row[-2])+'}'], strict=False, escape=False)
+
+                add_tables_in(
+                    doc,
+                    [
+                        self.most_species_on_one_list(
+                            region_where_clause,
+                            max_hours=3,
+                            max_miles=5,
+                            as_of=as_of,
+                            limit=20,
+                        ),
+                    ],
+                    columns=[1],
+                    add_item_f=most_species_formatter,
+                )
+
+            add_table_section(
+                doc,
+                self.four_seasons_champ(
+                    region_where_clause, as_of=as_of, limit=10, year=year
+                ),
+            )
+
+
+            with doc.create(Section('Top-ranked eBird Media')):
+                doc.append("Here are the top ten photos for the region, as ranked by eBird's algorithm which is based on user ratings.")
+
+                def _add_img(doc, photo_data):
+                    with doc.create(SubFigure(position='c',  width=NoEscape(r'0.33\linewidth'))) as row:
+                        # row.add_image(photo_data['image_filename'],  width=NoEscape(r'0.85\linewidth'))
+                        row.append(LatexCommand('centering'))
+                        row.append(StandAloneGraphic(
+                            image_options=r'width=2.35in,height=2in,keepaspectratio', filename=fix_filename(photo_data['image_filename'])))
+                        row.append(LatexCommand('caption*', f"#{photo_data['rank']}: {photo_data['common_name']} - {photo_data['user_display_name']}"))
+
+                with doc.create(Figure(position='h!')) as imagesRow1:
+                    doc.append(LatexCommand('centering'))
+                    photo_data = top_10_photo_data[0]
+                    _add_img(doc, photo_data)
+
+                with doc.create(Figure(position='h!')) as imagesRow1:
+                    doc.append(LatexCommand('centering'))
+                    for photo_data in top_10_photo_data[1:4]:
+                        _add_img(doc, photo_data)
+
+                with doc.create(Figure(position='h!')):
+                    doc.append(LatexCommand('centering'))
+                    for photo_data in top_10_photo_data[4:7]:
+                        _add_img(doc, photo_data)
+
+                with doc.create(Figure(position='h!')):
+                    doc.append(LatexCommand('centering'))
+                    for photo_data in top_10_photo_data[7:]:
+                        _add_img(doc, photo_data)
+
+                doc.append(NewPage())                
+
+            with doc.create(Section("Most Species Photographed or Recorded")):
+                add_section_description(
+                    doc,
+                    "This section is dedicated to the birders most avidly documenting their sightings with photos or sound recordings, and the birds most avidly avoiding documentation.",
                 )
                 add_tables_in_columns(
                     doc,
                     [
-                        self.top_year_lists(region_where_clause, as_of=as_of, limit=20),
                         self.top_year_lists(
-                            region_where_clause, as_of=as_of, limit=20, year=year
+                            region_where_clause, as_of=as_of, with_media=True, limit=20, include_change=True
                         ),
                         self.top_year_lists(
+                            region_where_clause,
+                            as_of=as_of,
+                            with_media=True,
+                            limit=20,
+                            year=year,
+                        ),
+                        self.most_seen_birds(
+                            region_where_clause,
+                            as_of=as_of,
+                            limit=20,
+                            sort="asc",
+                            with_media=True,
+                        ),
+                        self.most_seen_birds(
+                            region_where_clause,
+                            as_of=as_of,
+                            year=year,
+                            limit=20,
+                            sort="asc",
+                            with_media=True,
+                        ),
+                    ],
+                    num_columns=2,
+                )
+
+            if region_code == "US-DC-001":
+                with doc.create(Section("Top Life Lists by DC Ward")):
+                    # add_section_description(doc, "Top DC month listers for every month.")
+
+                    add_tables_in_columns(
+                        doc,
+                        [
+                            self.top_year_lists(
+                                region_where_clause,
+                                as_of=as_of,
+                                limit=10,
+                                block_name=block_name,
+                                wkv=wkv,
+                                include_change=True,
+                            )
+                            for block_name, wkv in sorted(dc_ward_wkv.items())
+                        ],
+                        num_columns=3,
+                    )
+
+            with doc.create(Section("Most Breeding Species Coded")):
+                desc = (
+                    "This section involves identifying breeding behaviors and coding them in eBird ('coding' means assigning a Breeding Code). "
+                    "The Score was described in an interview with Alex Wiebe at https://ebird.org/news/breedingbird2016/; "
+                    "'Confirmed' breeding birds are worth 3 points, 'Probable' breeding codes are worth 2, and 'Possible' codes are worth 1. "
+                )
+
+                if region_code.startswith("US-DC") or region_code.startswith("US-MD"):
+                    desc += (
+                        "This is particularly useful right now as the 3rd MD/DC Breeding Bird Atlas just completed the first year of a 5 year run. "
+                        "If you're not aware of the Atlasing effort, please see https://ebird.org/atlasmddc/about. "
+                        "Includes lists not specifically in an Atlas portal, and as elsewhere in this report the data is self-reported and unvetted, so it may differ from final Atlas figures. "
+                    )
+
+                add_section_description(doc, desc)
+                add_tables_in_columns(
+                    doc,
+                    [
+                        self.top_atlas_year_lists(
+                            region_where_clause,
+                            as_of=as_of,
+                            limit=20,
+                            year=year,
+                        ),
+                        self.top_atlas_coded_birds(
+                            region_where_clause,
+                            as_of=as_of,
+                            limit=20,
+                            year=year,
+                        ),
+                    ],
+                    num_columns=2,
+                )
+                add_list_section(
+                    doc,
+                    self.top_atlas_coded_people(
+                        region_where_clause, as_of=as_of, year=year, sort="desc"
+                    ),
+                )
+
+            with doc.create(Section("Most Efficient Birder")):
+                add_section_description(
+                    doc,
+                    "A list of the most efficient birders, in terms of seeing the most species per hour logged. "
+                    "Includes only complete stationary or traveling checklists over 5 minutes in duration. "
+                    "Birders also must have at least 10 checklists and at least 10 hours logged. "
+                    "(PS Yes, I know this is silly.)",
+                )
+                add_tables_in(
+                    doc,
+                    [
+                        self.most_avg_species_per_hour(
+                            region_where_clause, as_of=as_of, year=year, limit=15
+                        ),
+                    ],
+                    columns=[1],
+                )
+
+            with doc.create(Section("Most Honest Birder")):
+                add_section_description(
+                    doc,
+                    "A list of the most honest birders, as measured by heavy usage of Slashes (eg Cooper's/Sharp-shinned Hawk) and Spuhs (eg gull sp.). If you never need a slash or a spuh, you're lying either to us or to yourself. "
+                    "(PS Yes, I know this is possibly sillier than the last one.)",
+                )
+                add_tables_in(
+                    doc,
+                    [
+                        self.most_honest_birder(region_where_clause, as_of=as_of, limit=15),
+                        self.most_honest_birder(
+                            region_where_clause, as_of=as_of, year=year, limit=15
+                        ),
+                    ],
+                    columns=[2, 2],
+                    rank_by_colidx=-2,
+                )
+
+
+            with doc.create(Section("Most Time Spent in Field")):
+                add_section_description(
+                    doc,
+                    "Rankings of most time eBirded in the region.  'Days' are 24 hours long. 'Waking' is as a percentage of normal waking hours. (And this doesn't even include driving to locations, adding media to checklists, etc!)",
+                )
+                add_tables_in_columns(
+                    doc,
+                    [
+                        self.time_spent_in_field(
+                            region_where_clause, as_of=as_of, limit=20, year=year
+                        ),
+                        self.time_spent_in_field(
                             region_where_clause,
                             as_of=as_of,
                             limit=20,
                             year=year,
                             last_x_years=5,
                         ),
-                        self.top_year_lists(
-                            region_where_clause,
-                            as_of=as_of,
-                            limit=20,
-                            year=year,
-                            birder_started_on_or_after_year=year,
+                    ],
+                    num_columns=2,
+                    rank_by_colidx=-2,
+                )
+
+            with doc.create(Section("Month Closeouts")):
+                add_section_description(
+                    doc, "A Month Closeout is a bird seen in every month of the year."
+                )
+                add_tables_in_columns(
+                    doc,
+                    [
+                        self.top_month_closeouts(
+                            region_where_clause, as_of=as_of, limit=20
                         ),
+                        self.top_month_closeouts(
+                            region_where_clause, as_of=as_of, year=year, limit=20
+                        ),
+                        self.top_month_closeouts_best_years(
+                            region_where_clause, as_of=as_of, limit=20
+                        ),
+                        self.total_month_ticks(region_where_clause, as_of=as_of, limit=20),
                     ],
                     num_columns=2,
                 )
-
-                with doc.create(Section("Most Species Seen - All Time Bigs")):
-                    add_section_description(
-                        doc,
-                        "Here we present the all-time highest Big Year, Month, and Day -- the highest species count in a single time period. On the left are individual records. "
-                        "On the right are 'team' records, combining the species lists of all checklists posted in the region.",
-                    )
-
-                    limit = 15
-                    add_tables_in(
-                        doc,
-                        [
-                            self.top_all_time_year_lists(
-                                region_where_clause, as_of=as_of, limit=limit
-                            ),
-                            self.top_all_time_everyone_year_lists(
-                                region_where_clause, as_of=as_of, limit=limit
-                            ),
-                            self.top_all_time_month_lists(
-                                region_where_clause, as_of=as_of, limit=limit
-                            ),
-                            self.top_all_time_everyone_month_lists(
-                                region_where_clause, as_of=as_of, limit=limit
-                            ),
-                            self.top_all_time_day_lists(
-                                region_where_clause, as_of=as_of, limit=limit
-                            ),
-                            self.top_all_time_everyone_day_lists(
-                                region_where_clause, as_of=as_of, limit=limit
-                            ),
-                        ],
-                        columns=[2, 2, 2, 2, 2, 2],
-                    )
-
-                with doc.create(Section("Most Species Ever on One List")):
-                    add_section_description(
-                        doc,
-                        "Top scores here go to individuals with the longest Complete Stationary or Traveling lists that meet eBird checklist guidelines (max 3 hours, max 5 miles, https://support.ebird.org/en/support/solutions/articles/48000795623-ebird-rules-and-best-practices).",
-                    )
-
-                    add_tables_in(
-                        doc,
-                        [
-                            self.top_all_time_lists(
-                                region_where_clause,
-                                max_hours=3,
-                                max_miles=5,
-                                as_of=as_of,
-                                limit=20,
-                            ),
-                        ],
-                        columns=[1],
-                    )
-
-                add_table_section(
-                    doc,
-                    self.four_seasons_champ(
-                        region_where_clause, as_of=as_of, limit=20, year=year
-                    ),
+                add_list_section(
+                    doc, self.top_month_closeout_birds(region_where_clause, as_of=as_of)
                 )
 
-                with doc.create(Section("Most Species Photographed or Recorded")):
-                    add_section_description(
-                        doc,
-                        "This section is dedicated to the birders most avidly documenting their sightings with photos or sound recordings, and the birds most avidly avoiding documentation.",
-                    )
-                    add_tables_in_columns(
-                        doc,
-                        [
-                            self.top_year_lists(
-                                region_where_clause, as_of=as_of, with_media=True, limit=20
-                            ),
-                            self.top_year_lists(
-                                region_where_clause,
-                                as_of=as_of,
-                                with_media=True,
-                                limit=20,
-                                year=year,
-                            ),
-                            self.most_seen_birds(
-                                region_where_clause,
-                                as_of=as_of,
-                                limit=20,
-                                sort="asc",
-                                with_media=True,
-                            ),
-                            self.most_seen_birds(
-                                region_where_clause,
-                                as_of=as_of,
-                                year=year,
-                                limit=20,
-                                sort="asc",
-                                with_media=True,
-                            ),
-                        ],
-                        num_columns=2,
-                    )
+            with doc.create(Section("Top Month Life Lists")):
+                add_section_description(doc, "Top month listers for each month, all time.")
 
-                if region_code == "US-DC-001":
-                    with doc.create(Section("Top Life Lists by DC Ward")):
-                        # add_section_description(doc, "Top DC month listers for every month.")
-
-                        add_tables_in_columns(
-                            doc,
-                            [
-                                self.top_year_lists(
-                                    region_where_clause,
-                                    as_of=as_of,
-                                    limit=10,
-                                    block_name=block_name,
-                                    wkv=wkv,
-                                )
-                                for block_name, wkv in sorted(dc_ward_wkv.items())
-                            ],
-                            num_columns=3,
+                add_tables_in_columns(
+                    doc,
+                    [
+                        self.top_year_lists(
+                            region_where_clause, as_of=as_of, limit=10, month=month, include_change=True
                         )
+                        for month in range(1, 13)
+                    ],
+                    num_columns=3,
+                )
 
-                with doc.create(Section("Most Breeding Species Coded")):
-                    desc = (
-                        "This section involves identifying breeding behaviors and coding them in eBird ('coding' means assigning a Breeding Code). "
-                        "The Score was described in an interview with Alex Wiebe at https://ebird.org/news/breedingbird2016/; "
-                        "'Confirmed' breeding birds are worth 3 points, 'Probable' breeding codes are worth 2, and 'Possible' codes are worth 1. "
-                    )
+            # with doc.create(Section("2020 birds")):
+            #     add_section_description(
+            #         doc,
+            #         "hi"
+            #         # "Birding is a two-way street. Sadly, the birds themselves don't eBird so this data is necessarily incomplete. "
+            #         # "As a surrogate, we use people lists to identify how many birders each species got to see during the year.",
+            #     )
 
-                    if region_code.startswith("US-DC") or region_code.startswith("US-MD"):
-                        desc += (
-                            "This is particularly useful right now as the 3rd MD/DC Breeding Bird Atlas just completed the first year of a 5 year run. "
-                            "If you're not aware of the Atlasing effort, please see https://ebird.org/atlasmddc/about. "
-                            "Includes lists not specifically in an Atlas portal, and as elsewhere in this report the data is self-reported and unvetted, so it may differ from final Atlas figures. "
-                        )
+            with doc.create(Section("Bird's-eye View")):
+                add_section_description(
+                    doc,
+                    "Birding is a two-way street. Sadly, the birds themselves don't eBird so this data is necessarily incomplete. "
+                    "As a surrogate, we use people lists to identify how many birders each species got to see during the year.",
+                )
 
-                    add_section_description(doc, desc)
-                    add_tables_in_columns(
-                        doc,
-                        [
-                            self.top_atlas_year_lists(
-                                region_where_clause,
-                                as_of=as_of,
-                                limit=20,
-                                year=year,
-                            ),
-                            self.top_atlas_coded_birds(
-                                region_where_clause,
-                                as_of=as_of,
-                                limit=20,
-                                year=year,
-                            ),
-                        ],
-                        num_columns=2,
-                    )
-                    add_list_section(
-                        doc,
-                        self.top_atlas_coded_people(
-                            region_where_clause, as_of=as_of, year=year, sort="desc"
+                limit = 25
+                add_tables_in_columns(
+                    doc,
+                    [
+                        self.most_seen_birds(
+                            region_where_clause,
+                            as_of=as_of,
+                            year=year,
+                            limit=limit,
+                            sort="desc",
                         ),
-                    )
-
-                with doc.create(Section("Most Efficient Birder")):
-                    add_section_description(
-                        doc,
-                        "A list of the most efficient birders, in terms of seeing the most species per hour logged. "
-                        "Includes only complete stationary or traveling checklists over 5 minutes in duration. "
-                        "Birders also must have at least 10 checklists and at least 10 hours logged. "
-                        "(PS Yes, I know this is silly.)",
-                    )
-                    add_tables_in(
-                        doc,
-                        [
-                            self.most_avg_species_per_hour(
-                                region_where_clause, as_of=as_of, year=year, limit=15
-                            ),
-                        ],
-                        columns=[1],
-                    )
-
-                with doc.create(Section("Most Honest Birder")):
-                    add_section_description(
-                        doc,
-                        "A list of the most honest birders, as measured by heavy usage of Slashes (eg Cooper's/Sharp-shinned Hawk) and Spuhs (eg gull sp.). If you never need a slash or a spuh, you're lying either to us or to yourself. "
-                        "(PS Yes, I know this is possibly sillier than the last one.)",
-                    )
-                    add_tables_in(
-                        doc,
-                        [
-                            self.most_honest_birder(region_where_clause, as_of=as_of, limit=15),
-                            self.most_honest_birder(
-                                region_where_clause, as_of=as_of, year=year, limit=15
-                            ),
-                        ],
-                        columns=[2, 2],
-                        rank_by_colidx=-2,
-                    )
-
-                with doc.create(Section("Most Time Spent in Field")):
-                    add_section_description(
-                        doc,
-                        "Rankings of most time eBirded in the region.  'Days' are 24 hours long. 'Waking' is as a percentage of normal waking hours. (And this doesn't even include driving to locations, adding media to checklists, etc!)",
-                    )
-                    add_tables_in_columns(
-                        doc,
-                        [
-                            self.time_spent_in_field(
-                                region_where_clause, as_of=as_of, limit=20, year=year
-                            ),
-                            self.time_spent_in_field(
-                                region_where_clause,
-                                as_of=as_of,
-                                limit=20,
-                                year=year,
-                                last_x_years=5,
-                            ),
-                        ],
-                        num_columns=2,
-                        rank_by_colidx=-2,
-                    )
-
-                with doc.create(Section("Month Closeouts")):
-                    add_section_description(
-                        doc, "A Month Closeout is a bird seen in every month of the year."
-                    )
-                    add_tables_in_columns(
-                        doc,
-                        [
-                            self.top_month_closeouts(
-                                region_where_clause, as_of=as_of, limit=20
-                            ),
-                            self.top_month_closeouts(
-                                region_where_clause, as_of=as_of, year=year, limit=20
-                            ),
-                            self.top_month_closeouts_best_years(
-                                region_where_clause, as_of=as_of, limit=20
-                            ),
-                            self.total_month_ticks(region_where_clause, as_of=as_of, limit=20),
-                        ],
-                        num_columns=2,
-                    )
-                    add_list_section(
-                        doc, self.top_month_closeout_birds(region_where_clause, as_of=as_of)
-                    )
-
-                with doc.create(Section("Top Month Life Lists")):
-                    add_section_description(doc, "Top month listers for each month, all time.")
-
-                    add_tables_in_columns(
-                        doc,
-                        [
-                            self.top_year_lists(
-                                region_where_clause, as_of=as_of, limit=10, month=month
-                            )
-                            for month in range(1, 13)
-                        ],
-                        num_columns=3,
-                    )
-
-                # with doc.create(Section("2020 birds")):
-                #     add_section_description(
-                #         doc,
-                #         "hi"
-                #         # "Birding is a two-way street. Sadly, the birds themselves don't eBird so this data is necessarily incomplete. "
-                #         # "As a surrogate, we use people lists to identify how many birders each species got to see during the year.",
-                #     )
-
-                with doc.create(Section("Bird's-eye View")):
-                    add_section_description(
-                        doc,
-                        "Birding is a two-way street. Sadly, the birds themselves don't eBird so this data is necessarily incomplete. "
-                        "As a surrogate, we use people lists to identify how many birders each species got to see during the year.",
-                    )
-
-                    limit = 25
-                    add_tables_in_columns(
-                        doc,
-                        [
-                            self.most_seen_birds(
-                                region_where_clause,
-                                as_of=as_of,
-                                year=year,
-                                limit=limit,
-                                sort="desc",
-                            ),
-                            self.most_seen_birds(
-                                region_where_clause,
-                                as_of=as_of,
-                                year=year,
-                                limit=limit,
-                                sort="asc",
-                            ),
-                            self.most_seen_birds(
-                                region_where_clause,
-                                as_of=as_of,
-                                limit=limit,
-                                sort="asc",
-                                year=2020,
-                                last_x_years=5,
-                            ),
-                        ],
-                        num_columns=3,
-                    )
-
-                add_table_section(
-                    doc,
-                    self.least_reported_birds(
-                        region_where_clause, as_of=as_of, year=year, last_x_years=20
-                    ),
+                        self.most_seen_birds(
+                            region_where_clause,
+                            as_of=as_of,
+                            year=year,
+                            limit=limit,
+                            sort="asc",
+                        ),
+                        self.most_seen_birds(
+                            region_where_clause,
+                            as_of=as_of,
+                            limit=limit,
+                            sort="asc",
+                            year=2020,
+                            last_x_years=5,
+                        ),
+                    ],
+                    num_columns=3,
                 )
+
+            add_table_section(
+                doc,
+                self.least_reported_birds(
+                    region_where_clause, as_of=as_of, year=year, last_x_years=20
+                ),
+            )
 
         print("generating pdf...")
         filename_base = f"{year} Annual eBird Statistical Report - {region_code}"
@@ -707,6 +842,7 @@ class Command(BaseCommand):
         block_name=None,
         wkv=None,
         sort="desc",
+        include_change=False,
     ):
         where = ""
         if year is not None:
@@ -742,22 +878,40 @@ class Command(BaseCommand):
             where += f" and ST_Intersects(geog, ST_GeomFromEWKT('{block_geog.ewkt}'))"
             subtitle = f" {block_name}"
             title += f" {block_name}"
+        
+        prev_as_of = add_years(datetime.date(*map(int, as_of.split('-'))), -1).strftime("%Y-%m-%d")
+        if include_change:
+            _term = f"(count(t.common_name) - ( count(t.common_name) filter (where min_obs_date <= '{prev_as_of}') ) )"
+            change_sql = f""",
+                case when ({_term} > 0) then concat('+', {_term}::text)
+                when ({_term} = 0) then '-'
+                else ({_term})::text end as "Chg"
+            """
+        else:
+            change_sql = ''
 
         sql = f"""
-select get_observer_name(t.observer_id) as "Observer", count(t.common_name) as "Species"
+select get_observer_name(t.observer_id) as "Observer", 
+    count(t.common_name) as "Species"
+    {change_sql}
 from (
-         select distinct OBSERVER_ID, COMMON_NAME
+         select OBSERVER_ID, COMMON_NAME, min(observation_date) as min_obs_date
          from ebird
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
            and observation_date <= '{as_of}'
            {where}
+         group by observer_id, common_name
      ) t
 group by observer_id
 order by 2 {sort}, 1 asc
 limit {limit};
 """
+
+        # if with_media:
+        #     print (sql)
+        #     breakpoint()
         logger.debug(f"Generating {title}...")
         a, b = execute_query(sql)
         return title, subtitle, None, a, b
@@ -1034,7 +1188,7 @@ limit {limit};
         # subtitle += " "
         title = "Most Prone to Public Displays of Affection"
         description = (
-            "This lists every bird coded as Probable or Confirmed during the year, along with the number of people who coded it.  "
+            "a.k.a birds most frequently seen showing signs of presumed local breeding. This lists every bird that was assigned a Probable or Confirmed breeding code during the year, along with the number of people who coded it.  "
             "Includes lists not specifically in the Atlas portal, and as elsewhere in this report the data is self-reported and unvetted, so it may differ from final Atlas figures. "
             f"If {num_to_credit} or fewer birders coded it, their names are listed."
         )
@@ -1150,20 +1304,34 @@ limit {limit};
         if year is not None:
             where += f" AND extract(year from OBSERVATION_DATE) = {year}"
             subtitle = f"{year}"
+            include_change = False
         else:
             subtitle = "All-Time"
+            include_change = True
         title += " - " + subtitle
+
+        prev_as_of = add_years(datetime.date(*map(int, as_of.split('-'))), -1).strftime("%Y-%m-%d")
+        if include_change:
+            change_sql = """,
+            case
+                when (count(*) - (count(*) filter (where prev_num_months = 12)) > 0) then
+                    concat('+', (count(*) - (count(*) filter (where prev_num_months = 12)))::text)
+                when (count(*) - (count(*) filter (where prev_num_months = 12)) = 0) then '-'
+                else (count(*) - (count(*) filter (where prev_num_months = 12)))::text end as "Chg"
+            """
+        else:
+            change_sql = ''
 
         sql = f"""
 -- month closeouts
 select get_observer_name(OBSERVER_ID) as "Observer",
        count(*)                                           as "Species"
-       --, string_agg(COMMON_NAME, ', ' order by COMMON_NAME) as birds
+       {change_sql}
 
 from (
-         select OBSERVER_ID, COMMON_NAME, count(*) as num_months
+         select OBSERVER_ID, COMMON_NAME, count(*) as num_months, count(*) filter (where t.min_obs_date <= '{prev_as_of}') as prev_num_months
          from (
-                  select to_char(OBSERVATION_DATE, 'Mon') as mon, OBSERVER_ID, COMMON_NAME
+                  select to_char(OBSERVATION_DATE, 'Mon') as mon, OBSERVER_ID, COMMON_NAME, min(observation_date) as min_obs_date
                   from ebird
                   where {region_where_clause}
                     and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
@@ -1284,7 +1452,7 @@ from (select observer_id, min(duration_minutes) duration_minutes
         and not (approved = 'f' and reviewed = 't')
         and observation_date <= '{as_of}'
         and duration_minutes is not null
-        and duration_minutes <= 600
+        and duration_minutes <= 400
         and protocol_code in ('P21', 'P22')
         {where}
       group by observer_id, SAMPLING_EVENT_IDENTIFIER
@@ -1306,7 +1474,7 @@ limit {limit};
         sql = f"""
 -- all-time best month closeouts
 select get_observer_name(OBSERVER_ID) as "Observer",
-       Year,
+       Year as "Year",
        count(*)                                           as "Species"
 
 from (
@@ -1499,32 +1667,35 @@ limit {limit};
         return title, subtitle, None, a, b
 
     @staticmethod
-    def top_all_time_lists(region_where_clause, as_of, max_hours, max_miles, limit=10):
+    def most_species_on_one_list(region_where_clause, as_of, max_hours, max_miles, limit=10):
         title = f"All-Time Top Single List"
-        subtitle = f"Biggest List (under {max_hours}h, {max_miles}mi)"
+        subtitle = f"Biggest List (under {max_hours}h Travelling, {max_miles}mi Stationary)"
         miles_to_km = 0.6213712
 
         sql = f"""
-select get_observer_name(t.observer_id) as "Observer", 
-    min(OBSERVATION_DATE) as "Date", 
+select 
+    get_observer_name(t.observer_id) as "Observer",
+    min(OBSERVATION_DATE) as "Date",
     min(locality) as "Locality",
-    round(min(duration_minutes) / 60.0, 1) as "Hours", 
+    round(min(duration_minutes) / 60.0, 1) as "Hours",
+    round((min(effort_distance_km)*0.6213712)::numeric , 1) as "Miles",
+    concat('https://ebird.org/checklist/', min(SAMPLING_EVENT_IDENTIFIER)) as "_Url",
     count(t.common_name) as "Species"
 from (
-         select distinct OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, OBSERVATION_DATE, duration_minutes, locality, COMMON_NAME
+         select distinct OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, protocol_code, OBSERVATION_DATE, duration_minutes, effort_distance_km, locality, COMMON_NAME
          from ebird
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
            and observation_date <= '{as_of}'
-           and (duration_minutes is not null and duration_minutes < {max_hours} * 60)
-           and (effort_distance_km is null or effort_distance_km*{miles_to_km} < {max_miles})
+           and (
+               (protocol_code = 'P22' and effort_distance_km*{miles_to_km} <= {max_miles}) OR
+               (protocol_code = 'P21' and duration_minutes <= {max_hours} * 60))
      ) t
 group by observer_id, SAMPLING_EVENT_IDENTIFIER
-order by 5 desc
+order by count(t.common_name) desc
 limit {limit};
 """
-
         logger.debug(f"Generating {title}...")
         a, b = execute_query(sql)
         return title, subtitle, None, a, b
@@ -1583,7 +1754,7 @@ limit {limit};
                 where += f" AND extract(year from OBSERVATION_DATE) = {year}"
 
         else:
-            subtitle = "Most Honest Birder (All-Time)"
+            subtitle = "Most Honest Birder (All Time)"
 
         title = subtitle
 
@@ -1615,6 +1786,81 @@ limit {limit};
         logger.debug(f"Generating {title}...")
         a, b = execute_query(sql)
         return title, subtitle, None, a, b
+
+    @staticmethod
+    def every_month_is_a_big_month(
+        region_where_clause, as_of
+    ):
+        
+        title = "Biggest Big Days by Month"
+        subtitle = None
+        description = "Here are the single biggest days that ever took place in every month of the year. If you're looking for a record to break, this is a good place to start."
+
+        sql = f"""
+with summary as (select OBSERVER_ID,
+                        count(distinct common_name)                                          as "Species",
+                        OBSERVATION_DATE,
+                        ROW_NUMBER()
+                        OVER (PARTITION BY
+                            extract(month from OBSERVATION_DATE)
+                            ORDER BY count(distinct common_name) desc, OBSERVATION_DATE ASC) AS rank
+                 from ebird
+                 where {region_where_clause}
+                   and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
+                   and not (approved = 'f' and reviewed = 't')
+                   and observation_date <= '{as_of}'
+                 group by observer_id, OBSERVATION_DATE
+)
+    select 
+        extract(month from OBSERVATION_DATE), 
+       get_observer_name(observer_id) as "Observer",
+       "Species" as "Sp",
+       observation_date as "On"
+from summary
+where rank = 1
+order by extract(month from OBSERVATION_DATE);
+"""
+        logger.debug(f"Generating {title}...")
+        a, b = execute_query(sql)
+        return title, subtitle, description, a, b
+
+    @staticmethod
+    def every_day_is_a_big_day(
+        region_where_clause, as_of
+    ):
+        
+        title = "Every Day is a Big Day"
+        subtitle = None
+        description = "Here are the single biggest days that ever took place in EVERY calendar date. If you're looking for a really easy record to break, well, you've arrived."
+
+        sql = f"""
+with summary as (select OBSERVER_ID,
+                        count(distinct common_name)                                          as "Species",
+                        OBSERVATION_DATE,
+                        ROW_NUMBER()
+                        OVER (PARTITION BY
+                            extract(month from OBSERVATION_DATE), extract(day from OBSERVATION_DATE)
+                            ORDER BY count(distinct common_name) desc, OBSERVATION_DATE ASC) AS rank
+                 from ebird
+                 where {region_where_clause}
+                   and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
+                   and not (approved = 'f' and reviewed = 't')
+                   and observation_date <= '{as_of}'
+                 group by observer_id, OBSERVATION_DATE
+)
+    select 
+        extract(month from OBSERVATION_DATE), 
+        extract(day from OBSERVATION_DATE), 
+       get_observer_name(observer_id) as "Observer",
+       "Species" as "Sp",
+       extract(year from observation_date) as "On"
+from summary
+where rank = 1
+order by extract(month from OBSERVATION_DATE), extract(day from OBSERVATION_DATE);
+"""
+        logger.debug(f"Generating {title}...")
+        a, b = execute_query(sql)
+        return title, subtitle, description, a, b
 
     @staticmethod
     def new_birds_DEPRECATED(

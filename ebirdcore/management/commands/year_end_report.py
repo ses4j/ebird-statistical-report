@@ -180,7 +180,7 @@ class Command(BaseCommand):
             "Data extracted from eBird Basic Dataset. Version: EBD_relDec-2021. "
             "Cornell Lab of Ornithology, Ithaca, New York. Dec 2021."
         )
-        version = "v0.2 DRAFT"
+        version = "v1.0"
         doc.preamble.append(
             LatexCommand(
                 "title",
@@ -246,7 +246,8 @@ class Command(BaseCommand):
         with doc.create(Section("About this Document")):
             doc.append(
                 f"This is a summary report of data entered into the eBird database for the {region_description} region, intended for the amusement of area birders. "
-                "All data comes from the eBird dataset, and as such is self-reported and only sometimes reviewed or approved, so any numbers or sightings have the potential "
+                "All data comes from the eBird dataset, and as such is self-reported, sometimes does not include older records that have not yet been entered, and is "
+                "only sometimes reviewed or approved, so any numbers or sightings have the potential "
                 "to be incorrect. If birds are specifically marked by eBird reviewers as Exotics and so not approved, they are typically excluded from these reports. "
                 "If you have ideas for other lists or data that could be added "
                 "or have identified data discrepancies, please email scott.stafford@gmail.com. "
@@ -407,7 +408,7 @@ class Command(BaseCommand):
             with doc.create(Section("Most Species Ever on One List")):
                 add_section_description(
                     doc,
-                    "Top scores here go to individuals with the longest Complete Stationary or Traveling lists that meet eBird checklist guidelines (max 3 hours for Stationary, 5 miles for Travelling, https://support.ebird.org/en/support/solutions/articles/48000795623-ebird-rules-and-best-practices).",
+                    "Top scores here go to individuals with the longest Complete Stationary or Traveling lists that meet eBird checklist guidelines (max 3 hours for Stationary, 5 miles for Traveling, https://support.ebird.org/en/support/solutions/articles/48000795623-ebird-rules-and-best-practices).",
                 )
                 
 
@@ -538,6 +539,7 @@ class Command(BaseCommand):
                                 block_name=block_name,
                                 wkv=wkv,
                                 include_change=True,
+                                shorten_labels=True,
                             )
                             for block_name, wkv in sorted(dc_ward_wkv.items())
                         ],
@@ -590,7 +592,7 @@ class Command(BaseCommand):
                     "A list of the most efficient birders, in terms of seeing the most species per hour logged. "
                     "Includes only complete stationary or traveling checklists over 5 minutes in duration. "
                     "Birders also must have at least 10 checklists and at least 10 hours logged. "
-                    "(PS Yes, I know this is silly.)",
+                    "(PS: Yes, I know this is silly.)",
                 )
                 add_tables_in(
                     doc,
@@ -605,8 +607,10 @@ class Command(BaseCommand):
             with doc.create(Section("Most Honest Birder")):
                 add_section_description(
                     doc,
-                    "A list of the most honest birders, as measured by heavy usage of Slashes (eg Cooper's/Sharp-shinned Hawk) and Spuhs (eg gull sp.). If you never need a slash or a spuh, you're lying either to us or to yourself. "
-                    "(PS Yes, I know this is possibly sillier than the last one.)",
+                    "A list of the most honest birders, as measured by heavy usage of Slashes (eg Cooper's/Sharp-shinned Hawk) and Spuhs (eg gull sp.). "
+                    "If you never need a slash or a spuh, you're lying either to us or to yourself. 'Unique' refers to how many different kinds of slashes and "
+                    "spuhs you were able to employ. "
+                    "(PS: Yes, I know this is possibly sillier than the last one.)",
                 )
                 add_tables_in(
                     doc,
@@ -646,7 +650,7 @@ class Command(BaseCommand):
 
             with doc.create(Section("Month Closeouts")):
                 add_section_description(
-                    doc, "A Month Closeout is a bird seen in every month of the year."
+                    doc, "A Month Closeout is a bird seen in every month of the year. 'Ticks' count every bird-month, so seeing a Cardinal in all 12 months is worth 12 ticks."
                 )
                 add_tables_in_columns(
                     doc,
@@ -669,13 +673,13 @@ class Command(BaseCommand):
                 )
 
             with doc.create(Section("Top Month Life Lists")):
-                add_section_description(doc, "Top month listers for each month, all time.")
+                # add_section_description(doc, "Top month listers for each month, all time.")
 
                 add_tables_in_columns(
                     doc,
                     [
                         self.top_year_lists(
-                            region_where_clause, as_of=as_of, limit=10, month=month, include_change=True
+                            region_where_clause, as_of=as_of, limit=10, month=month, include_change=True, shorten_labels=True,
                         )
                         for month in range(1, 13)
                     ],
@@ -720,7 +724,7 @@ class Command(BaseCommand):
                             as_of=as_of,
                             limit=limit,
                             sort="asc",
-                            year=2020,
+                            year=year,
                             last_x_years=5,
                         ),
                     ],
@@ -843,12 +847,13 @@ class Command(BaseCommand):
         wkv=None,
         sort="desc",
         include_change=False,
+        shorten_labels=False,
     ):
         where = ""
         if year is not None:
             title = f"Year List"
             if last_x_years:
-                subtitle = f"{year-last_x_years+1}-{year}"
+                subtitle = f"{year-last_x_years+1}-{year} (Last 5 Years)"
                 where += (
                     f" AND extract(year from OBSERVATION_DATE) >= {year-last_x_years+1}"
                 )
@@ -890,9 +895,10 @@ class Command(BaseCommand):
         else:
             change_sql = ''
 
+        species_label = "Species" if not shorten_labels else "Sp."
         sql = f"""
 select get_observer_name(t.observer_id) as "Observer", 
-    count(t.common_name) as "Species"
+    count(t.common_name) as "{species_label}"
     {change_sql}
 from (
          select OBSERVER_ID, COMMON_NAME, min(observation_date) as min_obs_date
@@ -930,9 +936,9 @@ limit {limit};
         verb = "Seen" if not with_media else "Documented"
         title = f"Most {verb}"
         if sort == "desc":
-            subtitle = f"Most People {verb}"
+            subtitle = f"Most {verb}"
         elif sort == "asc":
-            subtitle = f"Fewest People {verb}"
+            subtitle = f"Least {verb}"
         else:
             raise RuntimeError()
 
@@ -996,7 +1002,7 @@ limit {limit};
 select common_name                                         as "Species",
        count(distinct extract(year from OBSERVATION_DATE)) as "Years Reported",
        count(distinct observer_id)                         as "Birders",
-       max(OBSERVATION_DATE)                               as "Last Seen"
+       max(OBSERVATION_DATE)                               as "Prior"
 from ebird
 where {region_where_clause}
   and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
@@ -1669,7 +1675,7 @@ limit {limit};
     @staticmethod
     def most_species_on_one_list(region_where_clause, as_of, max_hours, max_miles, limit=10):
         title = f"All-Time Top Single List"
-        subtitle = f"Biggest List (under {max_hours}h Travelling, {max_miles}mi Stationary)"
+        subtitle = f"Biggest List (under {max_hours}h Traveling, {max_miles}mi Stationary)"
         miles_to_km = 0.6213712
 
         sql = f"""
@@ -1915,7 +1921,7 @@ order by cur.common_name;
 
         sql = f"""
 select cur.common_name  as "Species",
-       (case when last.last_seen is null then 'n/a' else last.last_seen::text end) as "Last Seen",
+       (case when last.last_seen is null then 'n/a' else last.last_seen::text end) as "Prior",
        cur.min_obs_date as "First Reported",
        cur.cnt          as "Birders",
        (case when has_media = 't' then 'X' else '' end) as "Documented"

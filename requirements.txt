@@ -1,4 +1,4 @@
-Django==4.0.7
+Django==4.0.8
 requests==2.27.1
 psycopg2==2.9.3
 geopy==2.2.0

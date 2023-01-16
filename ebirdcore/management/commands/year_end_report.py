@@ -57,7 +57,15 @@ from pylatex.utils import NoEscape, bold, escape_latex, italic, fix_filename
 
 # from ebirdcore.mddcbbc_block_wkv import mddcbbc_block_wkv
 from ebirdcore.dc_ward_wkv import dc_ward_wkv
-from ebirdcore.latex_utils import add_section_description, add_tables_in_columns, add_tables_in, add_table, add_list_section, add_list_subsection, add_table_section
+from ebirdcore.latex_utils import (
+    add_section_description,
+    add_tables_in_columns,
+    add_tables_in,
+    add_table,
+    add_list_section,
+    add_list_subsection,
+    add_table_section,
+)
 from ebirdcore.models import EBird
 from ebirdcore.utils import get_observer_name, add_years
 from ebirdcore.sql_utils import fmt, fmtrow, format_list_of_names, namedtuplefetchall
@@ -180,7 +188,7 @@ class Command(BaseCommand):
             "Data extracted from eBird Basic Dataset. Version: EBD_relDec-2021. "
             "Cornell Lab of Ornithology, Ithaca, New York. Dec 2021."
         )
-        version = "v1.0"
+        version = "v0.1 DRAFT"
         doc.preamble.append(
             LatexCommand(
                 "title",
@@ -198,37 +206,54 @@ class Command(BaseCommand):
 
         def get_top_ranked_photo(region_code, year, limit=1):
             import requests, shutil
+            from fake_useragent import UserAgent
 
-            r = requests.get(
-                f"https://ebird.org/media/catalog.json?searchField=user&q=&regionCode={region_code}&mediaType=p&hotspot=&customRegion=&mr=M1TO12&bmo=1&emo=12&yr=YCUSTOM&by={year}&ey={year}&user=&view=Gallery&sort=rating_rank_desc&includeUnconfirmed=T&_req=&cap=no&subId=&catId=&_spec=&specId=&collectionCatalogId=&dsu=-1&action=reset_status&start=0"
+            url = f"https://media.ebird.org/api/v2/search?regionCode={region_code}&beginYear={year}&endYear={year}&sort=rating_rank_desc&birdOnly=true"
+            ua = UserAgent()
+            header = {"User-Agent": str(ua.chrome)}
+
+            ss = requests.session()
+            r = ss.get(
+                "https://media.ebird.org/catalog", allow_redirects=True, headers=header
             )
+            r = ss.get(url, headers=header)
+            r.raise_for_status()
             responses = []
             used_checklists = set()
             idx = 0
             # breakpoint()
-            for photo_data in r.json()["results"]["content"]:
+            for photo_data in r.json():
+                # https://cdn.download.ams.birds.cornell.edu/api/v1/asset/407223551/480
                 # photo_data = json_data[idx]
-                photo_url = photo_data["mediaUrl"]
-                common_name = photo_data["commonName"]
+                photo_url = f"https://cdn.download.ams.birds.cornell.edu/api/v1/asset/{photo_data['assetId']}/480"
+                common_name = photo_data["taxonomy"]["comName"]
                 user_display_name = photo_data["userDisplayName"]
-                if photo_data['eBirdChecklistId'] in used_checklists:
+                if photo_data["ebirdChecklistId"] in used_checklists:
                     continue
-                used_checklists.add(photo_data['eBirdChecklistId'])
-                user_display_name = user_display_name.replace(u"\U0001F989", '')
+                used_checklists.add(photo_data["ebirdChecklistId"])
+                # user_display_name = user_display_name.replace("\U0001F989", "")
                 img_response = requests.get(photo_url, stream=True)
                 img_filename = f"top-image-{region_code}-{year}-{idx}.jpg"
                 with open(img_filename, "wb") as out_file:
                     shutil.copyfileobj(img_response.raw, out_file)
                 del img_response
                 caption = f"{common_name} - The top-rated photo in {region_description} for {year} - ©{year} {user_display_name}"
-                rsp = {"caption": caption, "image_filename": img_filename, "rank": idx+1, "user_display_name": user_display_name, "common_name": common_name}
+                rsp = {
+                    "caption": caption,
+                    "image_filename": img_filename,
+                    "rank": idx + 1,
+                    "user_display_name": user_display_name,
+                    "common_name": common_name,
+                }
                 responses.append(rsp)
                 if len(responses) >= limit:
                     break
                 idx += 1
             return responses
 
-        top_10_photo_data = get_top_ranked_photo(region_code=region_code, year=year, limit=10)
+        top_10_photo_data = get_top_ranked_photo(
+            region_code=region_code, year=year, limit=10
+        )
         photo_data = top_10_photo_data[0]
 
         with doc.create(TitlePage()):
@@ -288,7 +313,9 @@ class Command(BaseCommand):
             add_tables_in_columns(
                 doc,
                 [
-                    self.top_year_lists(region_where_clause, as_of=as_of, limit=20, include_change=True),
+                    self.top_year_lists(
+                        region_where_clause, as_of=as_of, limit=20, include_change=True
+                    ),
                     self.top_year_lists(
                         region_where_clause, as_of=as_of, limit=20, year=year
                     ),
@@ -357,7 +384,7 @@ class Command(BaseCommand):
                 11: "Nov",
                 12: "Dec",
             }
-            
+
             def another_item_formatter(doc, orig_row):
                 with doc.create(SmallText()):
                     row = fmtrow(orig_row)
@@ -365,8 +392,7 @@ class Command(BaseCommand):
                     doc.append(val)
                     # doc.append(italic(row[3]))
                     doc.append("\n")
-                    
-            
+
             def another_item_formatter_with_months(doc, orig_row):
                 with doc.create(SmallText()):
                     row = fmtrow(orig_row)
@@ -374,24 +400,22 @@ class Command(BaseCommand):
                     doc.append(val)
                     # doc.append(italic(row[4]))
                     doc.append("\n")
-                    
 
             with doc.create(Section("Most Species Seen - Off-time Bigs")):
-                add_section_description(doc, "It's never a bad day for a big day. And, lest you think big days can only be done in May, here are the best efforts at other times of year.")
+                add_section_description(
+                    doc,
+                    "It's never a bad day for a big day. And, lest you think big days can only be done in May, here are the best efforts at other times of year.",
+                )
 
                 add_list_subsection(
                     doc,
-                    self.every_month_is_a_big_month(
-                        region_where_clause, as_of=as_of
-                    ),
-                    add_item_f=another_item_formatter
+                    self.every_month_is_a_big_month(region_where_clause, as_of=as_of),
+                    add_item_f=another_item_formatter,
                 )
                 add_list_subsection(
                     doc,
-                    self.every_day_is_a_big_day(
-                        region_where_clause, as_of=as_of
-                    ),
-                    add_item_f=another_item_formatter_with_months
+                    self.every_day_is_a_big_day(region_where_clause, as_of=as_of),
+                    add_item_f=another_item_formatter_with_months,
                 )
 
                 # add_tables_in(
@@ -410,16 +434,31 @@ class Command(BaseCommand):
                     doc,
                     "Top scores here go to individuals with the longest Complete Stationary or Traveling lists that meet eBird checklist guidelines (max 3 hours for Stationary, 5 miles for Traveling, https://support.ebird.org/en/support/solutions/articles/48000795623-ebird-rules-and-best-practices).",
                 )
-                
 
-                def most_species_formatter(data_table, row, rowidx, column_desc, rank_by_colidx, header_row, sort_val):
+                def most_species_formatter(
+                    data_table,
+                    row,
+                    rowidx,
+                    column_desc,
+                    rank_by_colidx,
+                    header_row,
+                    sort_val,
+                ):
                     def filter_private_cols(row):
-                        return [v for d, v in zip(column_desc, row) if not d.name.startswith("_")]
+                        return [
+                            v
+                            for d, v in zip(column_desc, row)
+                            if not d.name.startswith("_")
+                        ]
 
                     filtered_row = filter_private_cols(row)
                     fmtrow = [fmt(x) for x in filtered_row]
 
-                    if rank_by_colidx is not None and hasattr(header_row[0], 'startswith') and header_row[0].startswith("Observer"):
+                    if (
+                        rank_by_colidx is not None
+                        and hasattr(header_row[0], "startswith")
+                        and header_row[0].startswith("Observer")
+                    ):
                         current_sort_val = filtered_row[rank_by_colidx]
 
                         if sort_val == current_sort_val:
@@ -430,7 +469,11 @@ class Command(BaseCommand):
                         fmtrow[0] = f"{rank}.\u00A0{fmtrow[0]}"
 
                     data_table.add_row(fmtrow)
-                    data_table.add_row([' & &\multicolumn{4}{l}{'+italic(row[-2])+'}'], strict=False, escape=False)
+                    data_table.add_row(
+                        [" & &\multicolumn{4}{l}{" + italic(row[-2]) + "}"],
+                        strict=False,
+                        escape=False,
+                    )
 
                 add_tables_in(
                     doc,
@@ -454,39 +497,51 @@ class Command(BaseCommand):
                 ),
             )
 
-
-            with doc.create(Section('Top-ranked eBird Media')):
-                doc.append("Here are the top ten photos for the region, as ranked by eBird's algorithm which is based on user ratings.")
+            with doc.create(Section("Top-ranked eBird Media")):
+                doc.append(
+                    "Here are the top ten photos for the region, as ranked by eBird's algorithm which is based on user ratings."
+                )
 
                 def _add_img(doc, photo_data):
-                    with doc.create(SubFigure(position='c',  width=NoEscape(r'0.33\linewidth'))) as row:
+                    with doc.create(
+                        SubFigure(position="c", width=NoEscape(r"0.33\linewidth"))
+                    ) as row:
                         # row.add_image(photo_data['image_filename'],  width=NoEscape(r'0.85\linewidth'))
-                        row.append(LatexCommand('centering'))
-                        row.append(StandAloneGraphic(
-                            image_options=r'width=2.35in,height=2in,keepaspectratio', filename=fix_filename(photo_data['image_filename'])))
-                        row.append(LatexCommand('caption*', f"#{photo_data['rank']}: {photo_data['common_name']} - {photo_data['user_display_name']}"))
+                        row.append(LatexCommand("centering"))
+                        row.append(
+                            StandAloneGraphic(
+                                image_options=r"width=2.35in,height=2in,keepaspectratio",
+                                filename=fix_filename(photo_data["image_filename"]),
+                            )
+                        )
+                        row.append(
+                            LatexCommand(
+                                "caption*",
+                                f"#{photo_data['rank']}: {photo_data['common_name']} - {photo_data['user_display_name']}",
+                            )
+                        )
 
-                with doc.create(Figure(position='h!')) as imagesRow1:
-                    doc.append(LatexCommand('centering'))
+                with doc.create(Figure(position="h!")) as imagesRow1:
+                    doc.append(LatexCommand("centering"))
                     photo_data = top_10_photo_data[0]
                     _add_img(doc, photo_data)
 
-                with doc.create(Figure(position='h!')) as imagesRow1:
-                    doc.append(LatexCommand('centering'))
+                with doc.create(Figure(position="h!")) as imagesRow1:
+                    doc.append(LatexCommand("centering"))
                     for photo_data in top_10_photo_data[1:4]:
                         _add_img(doc, photo_data)
 
-                with doc.create(Figure(position='h!')):
-                    doc.append(LatexCommand('centering'))
+                with doc.create(Figure(position="h!")):
+                    doc.append(LatexCommand("centering"))
                     for photo_data in top_10_photo_data[4:7]:
                         _add_img(doc, photo_data)
 
-                with doc.create(Figure(position='h!')):
-                    doc.append(LatexCommand('centering'))
+                with doc.create(Figure(position="h!")):
+                    doc.append(LatexCommand("centering"))
                     for photo_data in top_10_photo_data[7:]:
                         _add_img(doc, photo_data)
 
-                doc.append(NewPage())                
+                doc.append(NewPage())
 
             with doc.create(Section("Most Species Photographed or Recorded")):
                 add_section_description(
@@ -497,7 +552,11 @@ class Command(BaseCommand):
                     doc,
                     [
                         self.top_year_lists(
-                            region_where_clause, as_of=as_of, with_media=True, limit=20, include_change=True
+                            region_where_clause,
+                            as_of=as_of,
+                            with_media=True,
+                            limit=20,
+                            include_change=True,
                         ),
                         self.top_year_lists(
                             region_where_clause,
@@ -615,7 +674,9 @@ class Command(BaseCommand):
                 add_tables_in(
                     doc,
                     [
-                        self.most_honest_birder(region_where_clause, as_of=as_of, limit=15),
+                        self.most_honest_birder(
+                            region_where_clause, as_of=as_of, limit=15
+                        ),
                         self.most_honest_birder(
                             region_where_clause, as_of=as_of, year=year, limit=15
                         ),
@@ -623,7 +684,6 @@ class Command(BaseCommand):
                     columns=[2, 2],
                     rank_by_colidx=-2,
                 )
-
 
             with doc.create(Section("Most Time Spent in Field")):
                 add_section_description(
@@ -650,7 +710,8 @@ class Command(BaseCommand):
 
             with doc.create(Section("Month Closeouts")):
                 add_section_description(
-                    doc, "A Month Closeout is a bird seen in every month of the year. 'Ticks' count every bird-month, so seeing a Cardinal in all 12 months is worth 12 ticks."
+                    doc,
+                    "A Month Closeout is a bird seen in every month of the year. 'Ticks' count every bird-month, so seeing a Cardinal in all 12 months is worth 12 ticks.",
                 )
                 add_tables_in_columns(
                     doc,
@@ -664,7 +725,9 @@ class Command(BaseCommand):
                         self.top_month_closeouts_best_years(
                             region_where_clause, as_of=as_of, limit=20
                         ),
-                        self.total_month_ticks(region_where_clause, as_of=as_of, limit=20),
+                        self.total_month_ticks(
+                            region_where_clause, as_of=as_of, limit=20
+                        ),
                     ],
                     num_columns=2,
                 )
@@ -679,7 +742,12 @@ class Command(BaseCommand):
                     doc,
                     [
                         self.top_year_lists(
-                            region_where_clause, as_of=as_of, limit=10, month=month, include_change=True, shorten_labels=True,
+                            region_where_clause,
+                            as_of=as_of,
+                            limit=10,
+                            month=month,
+                            include_change=True,
+                            shorten_labels=True,
                         )
                         for month in range(1, 13)
                     ],
@@ -739,7 +807,7 @@ class Command(BaseCommand):
             )
 
         print("generating pdf...")
-        filename_base = f"{year} Annual eBird Statistical Report - {region_code}"
+        filename_base = f"{year} Annual eBird Statistical Report - {region_code} - {region_description}"
         if version:
             filename_base += " - " + version
 
@@ -883,8 +951,10 @@ class Command(BaseCommand):
             where += f" and ST_Intersects(geog, ST_GeomFromEWKT('{block_geog.ewkt}'))"
             subtitle = f" {block_name}"
             title += f" {block_name}"
-        
-        prev_as_of = add_years(datetime.date(*map(int, as_of.split('-'))), -1).strftime("%Y-%m-%d")
+
+        prev_as_of = add_years(datetime.date(*map(int, as_of.split("-"))), -1).strftime(
+            "%Y-%m-%d"
+        )
         if include_change:
             _term = f"(count(t.common_name) - ( count(t.common_name) filter (where min_obs_date <= '{prev_as_of}') ) )"
             change_sql = f""",
@@ -893,11 +963,11 @@ class Command(BaseCommand):
                 else ({_term})::text end as "Chg"
             """
         else:
-            change_sql = ''
+            change_sql = ""
 
         species_label = "Species" if not shorten_labels else "Sp."
         sql = f"""
-select get_observer_name(t.observer_id) as "Observer", 
+select get_observer_name(t.observer_id) as "Observer",
     count(t.common_name) as "{species_label}"
     {change_sql}
 from (
@@ -1207,11 +1277,11 @@ select common_name as "Species",
                string_agg(get_observer_name(OBSERVER_ID), ', ' order by get_observer_name(OBSERVER_ID))
            else null end as "Birders"
 from (
-         select 
-            common_name, 
+         select
+            common_name,
             observer_id,
-            sum(case when breeding_category = 'C4' then 1 else 0 end), 
-            sum(case when breeding_category = 'C3' then 1 else 0 end) 
+            sum(case when breeding_category = 'C4' then 1 else 0 end),
+            sum(case when breeding_category = 'C3' then 1 else 0 end)
          from ebird
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
@@ -1285,7 +1355,7 @@ limit {limit};
         sql = f"""
 select month as "Month", count(distinct t.observer_id) as "Birders", count(distinct t.common_name) as "Species"
 from (
-         select OBSERVER_ID, to_char(OBSERVATION_DATE, 'yyyy-mm') as Month, COMMON_NAME         
+         select OBSERVER_ID, to_char(OBSERVATION_DATE, 'yyyy-mm') as Month, COMMON_NAME
          from ebird
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
@@ -1316,7 +1386,9 @@ limit {limit};
             include_change = True
         title += " - " + subtitle
 
-        prev_as_of = add_years(datetime.date(*map(int, as_of.split('-'))), -1).strftime("%Y-%m-%d")
+        prev_as_of = add_years(datetime.date(*map(int, as_of.split("-"))), -1).strftime(
+            "%Y-%m-%d"
+        )
         if include_change:
             change_sql = """,
             case
@@ -1326,7 +1398,7 @@ limit {limit};
                 else (count(*) - (count(*) filter (where prev_num_months = 12)))::text end as "Chg"
             """
         else:
-            change_sql = ''
+            change_sql = ""
 
         sql = f"""
 -- month closeouts
@@ -1446,9 +1518,9 @@ limit {limit};
             waking_hours = 5840 * last_x_years
 
         sql = f"""
-select get_observer_name(t.observer_id) as "Observer", 
-    count(*) as "Lists", 
-    round(sum(duration_minutes) / 60 / 24.0, 2) as "Days", 
+select get_observer_name(t.observer_id) as "Observer",
+    count(*) as "Lists",
+    round(sum(duration_minutes) / 60 / 24.0, 2) as "Days",
     round(100.0 * sum(duration_minutes) / 60 / {waking_hours}, 1)::text || '%' as "Waking"
 from (select observer_id, min(duration_minutes) duration_minutes
       from ebird
@@ -1673,13 +1745,17 @@ limit {limit};
         return title, subtitle, None, a, b
 
     @staticmethod
-    def most_species_on_one_list(region_where_clause, as_of, max_hours, max_miles, limit=10):
+    def most_species_on_one_list(
+        region_where_clause, as_of, max_hours, max_miles, limit=10
+    ):
         title = f"All-Time Top Single List"
-        subtitle = f"Biggest List (under {max_hours}h Traveling, {max_miles}mi Stationary)"
+        subtitle = (
+            f"Biggest List (under {max_hours}h Traveling, {max_miles}mi Stationary)"
+        )
         miles_to_km = 0.6213712
 
         sql = f"""
-select 
+select
     get_observer_name(t.observer_id) as "Observer",
     min(OBSERVATION_DATE) as "Date",
     min(locality) as "Locality",
@@ -1794,10 +1870,8 @@ limit {limit};
         return title, subtitle, None, a, b
 
     @staticmethod
-    def every_month_is_a_big_month(
-        region_where_clause, as_of
-    ):
-        
+    def every_month_is_a_big_month(region_where_clause, as_of):
+
         title = "Biggest Big Days by Month"
         subtitle = None
         description = "Here are the single biggest days that ever took place in every month of the year. If you're looking for a record to break, this is a good place to start."
@@ -1817,8 +1891,8 @@ with summary as (select OBSERVER_ID,
                    and observation_date <= '{as_of}'
                  group by observer_id, OBSERVATION_DATE
 )
-    select 
-        extract(month from OBSERVATION_DATE), 
+    select
+        extract(month from OBSERVATION_DATE),
        get_observer_name(observer_id) as "Observer",
        "Species" as "Sp",
        observation_date as "On"
@@ -1831,10 +1905,8 @@ order by extract(month from OBSERVATION_DATE);
         return title, subtitle, description, a, b
 
     @staticmethod
-    def every_day_is_a_big_day(
-        region_where_clause, as_of
-    ):
-        
+    def every_day_is_a_big_day(region_where_clause, as_of):
+
         title = "Every Day is a Big Day"
         subtitle = None
         description = "Here are the single biggest days that ever took place in EVERY calendar date. If you're looking for a really easy record to break, well, you've arrived."
@@ -1854,9 +1926,9 @@ with summary as (select OBSERVER_ID,
                    and observation_date <= '{as_of}'
                  group by observer_id, OBSERVATION_DATE
 )
-    select 
-        extract(month from OBSERVATION_DATE), 
-        extract(day from OBSERVATION_DATE), 
+    select
+        extract(month from OBSERVATION_DATE),
+        extract(day from OBSERVATION_DATE),
        get_observer_name(observer_id) as "Observer",
        "Species" as "Sp",
        extract(year from observation_date) as "On"

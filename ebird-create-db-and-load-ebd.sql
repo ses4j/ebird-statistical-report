@@ -1,6 +1,6 @@
 /*
 This script will create a database called ebirddb with a table called ebird.
-It will import the standard eBird export format file, as specified by `ebird_export_path` below into 
+It will import the standard eBird export format file, as specified by `ebird_export_path` below into
 the new table.  Then it will create some indexes and geo points.  Customize to suit.
 */
 
@@ -23,7 +23,7 @@ CREATE DATABASE "ebirddb" WITH ENCODING 'UTF8' TEMPLATE=template0;
 \c "ebirddb"
 
 DO $$
-DECLARE ebird_export_path CONSTANT VARCHAR := 'C:\ebird-tablespace\ebd_US-MD_prv_relDec-2021\ebd_US-MD_prv_relDec-2021.txt';
+DECLARE ebird_export_path CONSTANT VARCHAR := 'C:\ebird-tablespace\ebd_US-DC_prv_relDec-2022\ebd_US-DC_prv_relDec-2022.txt';
 -- DECLARE ebird_export_path CONSTANT VARCHAR := '/mnt/import-data/ebd_US-MD_prv_relDec-2020/ebd_US-MD_prv_relDec-2020.txt';
 BEGIN
 
@@ -34,8 +34,9 @@ CREATE TABLE "ebird"
     TAXONOMIC_ORDER int,
     CATEGORY                     varchar(20),      -- Probably 10 would be safe
     COMMON_NAME                  text,      -- Some hybrids have really long names
-    SCIENTIFIC_NAME                  text,  
+    SCIENTIFIC_NAME                  text,
     SUBSPECIES_COMMON_NAME       text,      --  ''
+    EXOTIC_CODE         varchar(1),
     OBSERVATION_COUNT_STR            varchar(10),       -- Someone saw 1.3 million Auklets.
     BREEDING_CODE     varchar(2),
     BREEDING_CATEGORY varchar(2),
@@ -73,8 +74,8 @@ CREATE TABLE "ebird"
 );
 
 EXECUTE( 'COPY "ebird" ' ||
-         '(GLOBAL_UNIQUE_IDENTIFIER, LAST_EDITED_DATE, TAXONOMIC_ORDER, CATEGORY, COMMON_NAME, SCIENTIFIC_NAME, SUBSPECIES_COMMON_NAME, OBSERVATION_COUNT_STR, BREEDING_CODE, BREEDING_CATEGORY, BEHAVIOR_CODE, COUNTRY, COUNTRY_CODE, STATE, STATE_CODE, COUNTY, COUNTY_CODE, ATLAS_BLOCK, LOCALITY, LOCALITY_ID, LOCALITY_TYPE, LATITUDE, LONGITUDE, OBSERVATION_DATE, TIME_OBSERVATIONS_STARTED, OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, PROTOCOL_CODE, PROJECT_CODE, DURATION_MINUTES, EFFORT_DISTANCE_KM, EFFORT_AREA_HA, NUMBER_OBSERVERS, ALL_SPECIES_REPORTED, GROUP_IDENTIFIER, HAS_MEDIA, APPROVED, REVIEWED, REASON, TRIP_COMMENTS, SPECIES_COMMENTS) ' ||
-         'FROM PROGRAM ''cut -f 1,2,3,4,5,6,7,9,10,11,12,14,15,16,17,18,19,23,24,25,26,27,28,29,30,31,32,34,35,36,37,38,39,40,41,42,43,44,45,46,47 ' || ebird_export_path || '''' ||
+         '(GLOBAL_UNIQUE_IDENTIFIER, LAST_EDITED_DATE, TAXONOMIC_ORDER, CATEGORY, COMMON_NAME, SCIENTIFIC_NAME, SUBSPECIES_COMMON_NAME, EXOTIC_CODE, OBSERVATION_COUNT_STR, BREEDING_CODE, BREEDING_CATEGORY, BEHAVIOR_CODE, COUNTRY, COUNTRY_CODE, STATE, STATE_CODE, COUNTY, COUNTY_CODE, ATLAS_BLOCK, LOCALITY, LOCALITY_ID, LOCALITY_TYPE, LATITUDE, LONGITUDE, OBSERVATION_DATE, TIME_OBSERVATIONS_STARTED, OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, PROTOCOL_CODE, PROJECT_CODE, DURATION_MINUTES, EFFORT_DISTANCE_KM, EFFORT_AREA_HA, NUMBER_OBSERVERS, ALL_SPECIES_REPORTED, GROUP_IDENTIFIER, HAS_MEDIA, APPROVED, REVIEWED, REASON, TRIP_COMMENTS, SPECIES_COMMENTS) ' ||
+         'FROM PROGRAM ''cut -f 1,2,3,4,6,7,8,10,11,12,13,14,16,17,18,19,20,21,25,26,27,28,29,30,31,32,33,34,36,37,38,39,40,41,42,43,44,45,46,47,48,49 ' || ebird_export_path || '''' ||
          ' WITH (FORMAT CSV, HEADER, QUOTE E''\5'', ENCODING ''UTF8'', DELIMITER E''\t'')');
 
 END $$;

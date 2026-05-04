@@ -33,6 +33,7 @@ def fmt(s):
     if s and isinstance(s, str):
         s = (
             s.replace("\u00A0", " ")
+            .replace("\u1F99A", "<peacock> ")
             .encode("latin-1", "ignore")
             .decode("latin-1")
             .replace(" ", "\u00A0")

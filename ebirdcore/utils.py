@@ -1,13 +1,15 @@
+import pickle, io
 import datetime
 import logging
 import requests
 from bs4 import BeautifulSoup
 from .models import EBird
-from diskcache import Cache
-
-cache = Cache("cache_observer_name")
+from diskcache import Cache, Disk
 
 logger = logging.getLogger(__name__)
+
+
+cache = Cache("cache_observer_name")
 
 
 def get_checklist_url(sampling_event_identifier):
@@ -34,7 +36,6 @@ def get_observer_name(obs_id):
     logger.debug(f"Identified {obs_id} as {ret} via checklist {checklist_code}.")
 
     return ret
-
 
 
 def add_years(d, years):

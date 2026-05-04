@@ -52,6 +52,7 @@ def get_tabular_format(i, d):
     else:
         return "r"
 
+
 def get_tabu_format(i, d):
     if i == 0:
         return "X[l]"
@@ -84,18 +85,19 @@ def add_tables_in_columns(doc, table_rets, num_columns=3, rank_by_colidx=-1):
 
     for idx, table_ret in enumerate(table_rets):
         title, subtitle, description, column_desc, vals = table_ret
+        rbc = rank_by_colidx[idx] if isinstance(rank_by_colidx, list) else rank_by_colidx
         # assert subtitle
         # with doc.create(Subsection(subtitle)):
-        with doc.create(MiniPage(align="t", pos="t", width=fr"{col_width}\textwidth")):
+        with doc.create(MiniPage(align="t", pos="t", width=rf"{col_width}\textwidth")):
             # if subtitle:
             #     doc.append(bold(subtitle))
             add_table(
                 doc,
                 column_desc,
                 vals,
-                rank_by_colidx=rank_by_colidx,
+                rank_by_colidx=rbc,
                 hline_every=hline_every,
-                caption=subtitle
+                caption=subtitle,
             )
 
         if idx % num_columns == num_columns - 1:
@@ -104,27 +106,45 @@ def add_tables_in_columns(doc, table_rets, num_columns=3, rank_by_colidx=-1):
         else:
             doc.append(HorizontalSpace("15pt"))
 
-def add_tables_in_default_formatter(data_table, row, rowidx, column_desc, rank_by_colidx, header_row, sort_val):
+
+def add_tables_in_default_formatter(
+    data_table, row, rowidx, column_desc, rank_by_colidx, header_row, sort_val
+):
     def filter_private_cols(row):
         return [v for d, v in zip(column_desc, row) if not d.name.startswith("_")]
 
     filtered_row = filter_private_cols(row)
     fmtrow = [fmt(x) for x in filtered_row]
 
-    if rank_by_colidx is not None and hasattr(header_row[0], 'startswith') and header_row[0].startswith("Observer"):
+    if (
+        rank_by_colidx is not None
+        and hasattr(header_row[0], "startswith")
+        and header_row[0].startswith("Observer")
+    ):
         current_sort_val = filtered_row[rank_by_colidx]
 
-        if sort_val == current_sort_val:
-            pass
+        if sort_val[0] == current_sort_val:
+            rank = sort_val[1]
         else:
             rank = rowidx + 1
-            sort_val = current_sort_val
+            sort_val[0] = current_sort_val
+            sort_val[1] = rank
+        # if rowidx == 5:
+        #     breakpoint()
         fmtrow[0] = f"{rank}.\u00A0{fmtrow[0]}"
+        # breakpoint()
 
     data_table.add_row(fmtrow)
 
 
-def add_tables_in(doc, table_rets, columns, rank_by_colidx=-1, uselongtabu=False, add_item_f=add_tables_in_default_formatter):
+def add_tables_in(
+    doc,
+    table_rets,
+    columns,
+    rank_by_colidx=-1,
+    uselongtabu=False,
+    add_item_f=add_tables_in_default_formatter,
+):
     so_far = 0.0
     for idx, table_ret in enumerate(table_rets):
         num_columns = columns[idx]
@@ -139,18 +159,18 @@ def add_tables_in(doc, table_rets, columns, rank_by_colidx=-1, uselongtabu=False
         title, subtitle, description, column_desc, vals = table_ret
         assert subtitle
         # with doc.create(Subsection(subtitle)):
-        with doc.create(MiniPage(align="t", pos="t", width=fr"{col_width}\textwidth")):
+        with doc.create(MiniPage(align="t", pos="t", width=rf"{col_width}\textwidth")):
             # doc.append(bold(subtitle))
             add_table(
-                    doc,
-                    column_desc,
-                    vals,
-                    rank_by_colidx=rank_by_colidx,
-                    hline_every=hline_every,
-                    caption=subtitle,
-                    uselongtabu=uselongtabu,
-                    add_item_f=add_item_f,
-                )
+                doc,
+                column_desc,
+                vals,
+                rank_by_colidx=rank_by_colidx,
+                hline_every=hline_every,
+                caption=subtitle,
+                uselongtabu=uselongtabu,
+                add_item_f=add_item_f,
+            )
 
         if so_far > 0.9:
             doc.append(VerticalSpace("4pt"))
@@ -172,7 +192,7 @@ def get_width(num_columns):
 
 
 def add_table_section(doc, args):
-    """ Add new section with a single table in it. """
+    """Add new section with a single table in it."""
     title, subtitle, description, column_desc, vals = args
     with doc.create(Section(title)):
         add_section_description(doc, description)
@@ -198,37 +218,46 @@ def an_item_formatter(doc, orig_row):
 
 
 def add_list_subsection(doc, args, add_item_f=an_item_formatter, num_cols=3):
-    """ Add new section with a single list in it. """
+    """Add new section with a single list in it."""
     title, subtitle, description, column_desc, vals = args
     with doc.create(Subsection(title)):
         add_section_description(doc, description)
 
-        doc.append(NoEscape(r"\begin{multicols}{"+str(num_cols)+"}"))
+        doc.append(NoEscape(r"\begin{multicols}{" + str(num_cols) + "}"))
         # text = []
         for orig_row in vals:
             add_item_f(doc, orig_row)
         doc.append(NoEscape(r"\end{multicols}"))
 
+
 def add_list_section(doc, args, add_item_f=an_item_formatter, num_cols=3):
-    """ Add new section with a single list in it. """
+    """Add new section with a single list in it."""
     title, subtitle, description, column_desc, vals = args
     with doc.create(Section(title)):
         add_section_description(doc, description)
 
-        doc.append(NoEscape(r"\begin{multicols}{"+str(num_cols)+"}"))
+        doc.append(NoEscape(r"\begin{multicols}{" + str(num_cols) + "}"))
         # text = []
         for orig_row in vals:
             add_item_f(doc, orig_row)
         doc.append(NoEscape(r"\end{multicols}"))
-        
+
+
 def add_table(
-    doc, column_desc, vals, uselongtabu=False, rank_by_colidx=-1, hline_every=None, caption=None, add_item_f=add_tables_in_default_formatter
+    doc,
+    column_desc,
+    vals,
+    uselongtabu=False,
+    rank_by_colidx=-1,
+    hline_every=None,
+    caption=None,
+    add_item_f=add_tables_in_default_formatter,
 ):
     header_row = []
     for d in column_desc:
         if d.name.startswith("_"):
             continue
-        if d.name != 'Chg':
+        if d.name != "Chg":
             header_row.append(d.name)
         else:
             header_row.append(NoEscape("$\Delta$"))
@@ -242,12 +271,12 @@ def add_table(
     )
     TableClass = LongTabularx if uselongtabu else Tabularx
     # with doc.create(Table()) as table:
-        # if caption:
-        #     table.add_caption(caption)
+    # if caption:
+    #     table.add_caption(caption)
     if caption:
         doc.append(bold(caption))
         doc.append(VerticalSpace(NoEscape("-10pt")))
-        
+
     with doc.create(TableClass(column_def, booktabs=True)) as data_table:
         data_table.add_row(header_row, mapper=[bold])
         data_table.add_hline()
@@ -256,9 +285,17 @@ def add_table(
             data_table.end_table_header()
 
         rank = 0
-        sort_val = None
+        sort_val = [None, None]
         for rowidx, row in enumerate(vals):
-            add_item_f(data_table, row, rowidx, column_desc, rank_by_colidx, header_row, sort_val)
+            add_item_f(
+                data_table,
+                row,
+                rowidx,
+                column_desc,
+                rank_by_colidx,
+                header_row,
+                sort_val,
+            )
 
             if hline_every:
                 # breakpoint()

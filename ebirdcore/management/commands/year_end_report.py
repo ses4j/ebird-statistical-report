@@ -78,6 +78,25 @@ class TitlePage(Environment):
     r"""titlepage env."""
 
 
+if os.name == "nt":
+    VENV_BASE = os.environ["VIRTUAL_ENV"]
+    os.environ["PATH"] = (
+        os.path.join(VENV_BASE, "Lib\\site-packages\\osgeo") + ";" + os.environ["PATH"]
+    )
+    os.environ["PROJ_LIB"] = (
+        os.path.join(VENV_BASE, "Lib\\site-packages\\osgeo\\data\\proj")
+        + ";"
+        + os.environ["PATH"]
+    )
+    if os.path.exists(os.path.join(VENV_BASE, "Lib\\site-packages\\osgeo\\gdal.dll")):
+        GDAL_LIBRARY_PATH = os.environ["GDAL_LIBRARY_PATH"] = os.path.join(
+            VENV_BASE, "Lib\\site-packages\\osgeo\\gdal.dll"
+        )
+else:
+    GDAL_LIBRARY_PATH = os.getenv("GDAL_LIBRARY_PATH")
+    GEOS_LIBRARY_PATH = os.getenv("GEOS_LIBRARY_PATH")
+
+
 @Field.register_lookup
 class NotEqualLookup(Lookup):
     lookup_name = "ne"
@@ -127,6 +146,7 @@ def _get_full_where_clause(
         where {region_where_clause}
         and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
         and not (approved = 'f' and reviewed = 't')
+        and (exotic_code is null or exotic_code in ('N'))
         and observation_date <= '{as_of}'
         {where}
         """
@@ -175,6 +195,7 @@ class Command(BaseCommand):
             "headheight": "10pt",
             "headsep": "10pt",
             "includeheadfoot": True,
+            # "footskip": "3pt",
         }
         doc = Document(
             page_numbers=True, geometry_options=geometry_options, indent=False
@@ -188,7 +209,7 @@ class Command(BaseCommand):
             "Data extracted from eBird Basic Dataset. Version: EBD_relDec-2021. "
             "Cornell Lab of Ornithology, Ithaca, New York. Dec 2021."
         )
-        version = "v0.1 DRAFT"
+        version = "v1.0"
         doc.preamble.append(
             LatexCommand(
                 "title",
@@ -233,6 +254,9 @@ class Command(BaseCommand):
                 used_checklists.add(photo_data["ebirdChecklistId"])
                 # user_display_name = user_display_name.replace("\U0001F989", "")
                 img_response = requests.get(photo_url, stream=True)
+                if img_response.status_code != 200:
+                    continue
+                    # breakpoint()
                 img_filename = f"top-image-{region_code}-{year}-{idx}.jpg"
                 with open(img_filename, "wb") as out_file:
                     shutil.copyfileobj(img_response.raw, out_file)
@@ -262,11 +286,13 @@ class Command(BaseCommand):
 
             with doc.create(Figure(position="h!")) as kitten_pic:
                 kitten_pic.add_image(photo_data["image_filename"], width="5in")
-                kitten_pic.add_caption(photo_data["caption"])
+                kitten_pic.add_caption(fmt(photo_data["caption"]))
 
-            doc.append(NewPage())
+        # doc.append(NewPage())
 
         doc.append(NoEscape(r"\tableofcontents"))
+
+        doc.append(NewPage())
 
         with doc.create(Section("About this Document")):
             doc.append(
@@ -300,7 +326,7 @@ class Command(BaseCommand):
                 num_columns=1,
             )
 
-        doc.append(NewPage())
+        doc.append(LineBreak())
 
         with doc.create(Section("Most Species Seen")):
             add_section_description(
@@ -335,6 +361,7 @@ class Command(BaseCommand):
                     ),
                 ],
                 num_columns=2,
+                rank_by_colidx=1,
             )
 
             with doc.create(Section("Most Species Seen - All-Time Bigs")):
@@ -355,10 +382,10 @@ class Command(BaseCommand):
                             region_where_clause, as_of=as_of, limit=limit
                         ),
                         self.top_all_time_month_lists(
-                            region_where_clause, as_of=as_of, limit=limit
+                            region_where_clause, as_of=as_of, limit=10
                         ),
                         self.top_all_time_everyone_month_lists(
-                            region_where_clause, as_of=as_of, limit=limit
+                            region_where_clause, as_of=as_of, limit=10
                         ),
                         self.top_all_time_day_lists(
                             region_where_clause, as_of=as_of, limit=limit
@@ -466,7 +493,7 @@ class Command(BaseCommand):
                         else:
                             rank = rowidx + 1
                             sort_val = current_sort_val
-                        fmtrow[0] = f"{rank}.\u00A0{fmtrow[0]}"
+                        fmtrow[0] = f"{rank}.\u00a0{fmtrow[0]}"
 
                     data_table.add_row(fmtrow)
                     data_table.add_row(
@@ -517,7 +544,9 @@ class Command(BaseCommand):
                         row.append(
                             LatexCommand(
                                 "caption*",
-                                f"#{photo_data['rank']}: {photo_data['common_name']} - {photo_data['user_display_name']}",
+                                fmt(
+                                    f"#{photo_data['rank']}: {photo_data['common_name']} - {photo_data['user_display_name']}"
+                                ),
                             )
                         )
 
@@ -614,7 +643,7 @@ class Command(BaseCommand):
 
                 if region_code.startswith("US-DC") or region_code.startswith("US-MD"):
                     desc += (
-                        "This is particularly useful right now as the 3rd MD/DC Breeding Bird Atlas just completed the first year of a 5 year run. "
+                        "The 3rd MD/DC Breeding Bird Atlas is running from 2020-2025."
                         "If you're not aware of the Atlasing effort, please see https://ebird.org/atlasmddc/about. "
                         "Includes lists not specifically in an Atlas portal, and as elsewhere in this report the data is self-reported and unvetted, so it may differ from final Atlas figures. "
                     )
@@ -730,6 +759,9 @@ class Command(BaseCommand):
                         ),
                     ],
                     num_columns=2,
+                    # all-time has trailing Chg col so -1 would rank by Chg not Species;
+                    # total_month_ticks has trailing Avg col so -1 would rank by Avg not Ticks.
+                    rank_by_colidx=[1, -1, -1, 1],
                 )
                 add_list_section(
                     doc, self.top_month_closeout_birds(region_where_clause, as_of=as_of)
@@ -817,7 +849,12 @@ class Command(BaseCommand):
 
     @staticmethod
     def year_stats(
-        region_where_clause, as_of, limit=10, year=None, month=None, last_x_years=None
+        region_where_clause,
+        as_of,
+        limit=10,
+        year=None,
+        month=None,
+        last_x_years=None,
     ):
         title = ""
         subtitle = title
@@ -976,6 +1013,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
            {where}
          group by observer_id, common_name
@@ -1045,6 +1083,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
         -- and OBSERVATION_DATE >= '{year}-01-01'
         and observation_date <= '{as_of}'
         {where}
@@ -1077,6 +1116,7 @@ from ebird
 where {region_where_clause}
   and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
   and not (approved = 'f' and reviewed = 't')
+  and (exotic_code is null or exotic_code in ('N'))
   and observation_date <= '{as_of}'
   and observation_date >= '{year-last_x_years+1}-01-01'
 group by common_name
@@ -1143,6 +1183,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
            AND breeding_category is not null
            AND breeding_category in ('C2', 'C3', 'C4')
@@ -1206,6 +1247,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
            AND breeding_category is not null
            AND breeding_category in ('C2', 'C3', 'C4')
@@ -1286,6 +1328,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
            AND breeding_category is not null
            AND breeding_category in ('C3', 'C4')
@@ -1325,6 +1368,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
            {where}
      ) t
@@ -1360,6 +1404,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
            {where}
      ) t
@@ -1414,6 +1459,7 @@ from (
                   where {region_where_clause}
                     and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
                     and not (approved = 'f' and reviewed = 't')
+                    and (exotic_code is null or exotic_code in ('N'))
                     and observation_date <= '{as_of}'
                     {where}
                   group by 1, 2, 3) t
@@ -1451,6 +1497,7 @@ from (
                   where {region_where_clause}
                     and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
                     and not (approved = 'f' and reviewed = 't')
+                    and (exotic_code is null or exotic_code in ('N'))
                     and observation_date <= '{as_of}'
                   group by 1, 2, 3) t
          group by OBSERVER_ID, COMMON_NAME
@@ -1481,6 +1528,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
            ) t
 
@@ -1528,6 +1576,7 @@ from (select observer_id, min(duration_minutes) duration_minutes
         and {region_where_clause}
         and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
         and not (approved = 'f' and reviewed = 't')
+        and (exotic_code is null or exotic_code in ('N'))
         and observation_date <= '{as_of}'
         and duration_minutes is not null
         and duration_minutes <= 400
@@ -1563,6 +1612,7 @@ from (
                   where {region_where_clause}
                     and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
                     and not (approved = 'f' and reviewed = 't')
+                    and (exotic_code is null or exotic_code in ('N'))
                     and observation_date <= '{as_of}'
                   group by 1, 2, 3, 4) t
          group by OBSERVER_ID, year, COMMON_NAME
@@ -1591,6 +1641,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
      ) t
 group by observer_id, year
@@ -1610,7 +1661,7 @@ limit {limit};
         description = (
             "The Four Seasons Championship is a competition idea I've toyed with. Most Big Days are during migration, but they don't have to be! "
             "The idea is to schedule a Big Day in the peak of each of the four seasons. Sum up the tally from each of the four days, and the person with the best score is the Champ. "
-            "Since this hasn't actually been organized, for now this ranking will suffice: The sum of each person's best day in each of the four seasons (Mar-May, Jun-Jul, Aug-Nov, Dec-Feb)."
+            "Since this hasn't actually been organized, for now this ranking will suffice: The sum of each person's best day in each of the four seasons (Mar-May, Jun-Jul, Aug-Nov, Jan-Feb+Dec)."
         )
 
         sql = f"""
@@ -1621,6 +1672,7 @@ with birdies as (
       and {region_where_clause}
       and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
       and not (approved = 'f' and reviewed = 't')
+      and (exotic_code is null or exotic_code in ('N'))
       and OBSERVATION_DATE BETWEEN '{year}-01-01' and '{year}-12-31'
       and observation_date <= '{as_of}'
     group by observer_id, OBSERVATION_DATE
@@ -1684,6 +1736,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
      ) t
 group by observer_id, Month
@@ -1709,6 +1762,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
      ) t
 group by observer_id, OBSERVATION_DATE
@@ -1734,6 +1788,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
      ) t
 group by OBSERVATION_DATE
@@ -1769,6 +1824,7 @@ from (
          where {region_where_clause}
            and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
            and not (approved = 'f' and reviewed = 't')
+           and (exotic_code is null or exotic_code in ('N'))
            and observation_date <= '{as_of}'
            and (
                (protocol_code = 'P22' and effort_distance_km*{miles_to_km} <= {max_miles}) OR
@@ -1803,6 +1859,7 @@ from (select observer_id, min(duration_minutes) / 60.0 as duration_hours, count(
         and {region_where_clause}
         and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
         and not (approved = 'f' and reviewed = 't')
+        and (exotic_code is null or exotic_code in ('N'))
         and observation_date <= '{as_of}'
         and duration_minutes is not null
         and duration_minutes >= 5
@@ -1871,7 +1928,6 @@ limit {limit};
 
     @staticmethod
     def every_month_is_a_big_month(region_where_clause, as_of):
-
         title = "Biggest Big Days by Month"
         subtitle = None
         description = "Here are the single biggest days that ever took place in every month of the year. If you're looking for a record to break, this is a good place to start."
@@ -1888,6 +1944,7 @@ with summary as (select OBSERVER_ID,
                  where {region_where_clause}
                    and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
                    and not (approved = 'f' and reviewed = 't')
+                   and (exotic_code is null or exotic_code in ('N'))
                    and observation_date <= '{as_of}'
                  group by observer_id, OBSERVATION_DATE
 )
@@ -1906,7 +1963,6 @@ order by extract(month from OBSERVATION_DATE);
 
     @staticmethod
     def every_day_is_a_big_day(region_where_clause, as_of):
-
         title = "Every Day is a Big Day"
         subtitle = None
         description = "Here are the single biggest days that ever took place in EVERY calendar date. If you're looking for a really easy record to break, well, you've arrived."
@@ -1923,6 +1979,7 @@ with summary as (select OBSERVER_ID,
                  where {region_where_clause}
                    and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
                    and not (approved = 'f' and reviewed = 't')
+                   and (exotic_code is null or exotic_code in ('N'))
                    and observation_date <= '{as_of}'
                  group by observer_id, OBSERVATION_DATE
 )
@@ -1964,6 +2021,7 @@ from (
          where {region_where_clause}
             and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
             and not (approved = 'f' and reviewed = 't')
+            and (exotic_code is null or exotic_code in ('N'))
             and observation_date <= '{as_of}'
             and extract(year from OBSERVATION_DATE) in ({comma_join(cur_year_in)})
          group by 1) cur
@@ -1974,6 +2032,7 @@ from (
          where {region_where_clause}
             and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
             and not (approved = 'f' and reviewed = 't')
+            and (exotic_code is null or exotic_code in ('N'))
             and observation_date <= '{as_of}'
             {prev_where}
          group by 1) last
@@ -2007,6 +2066,7 @@ from (
          where {region_where_clause}
             and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
             and not (approved = 'f' and reviewed = 't')
+            and (exotic_code is null or exotic_code in ('N'))
             and observation_date <= '{as_of}'
             and observation_date >= '{year}-01-01'
          group by 1) cur
@@ -2017,6 +2077,7 @@ from (
          where {region_where_clause}
             and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
             and not (approved = 'f' and reviewed = 't')
+            and (exotic_code is null or exotic_code in ('N'))
             and observation_date <= '{as_of}'
             and observation_date <= '{year-1}-12-31'
          group by 1) last
@@ -2024,6 +2085,130 @@ from (
 where last.last_seen < '{year-1}-01-01'
    or last.last_seen is null
 order by last_seen asc nulls first;
+"""
+        logger.debug(f"Generating {title}...")
+        a, b = execute_query(sql)
+        return title, subtitle, None, a, b
+
+
+    @staticmethod
+    def woodpecker_clean_sweep(region_where_clause, as_of, year=None, limit=100):
+        woodpeckers = [
+            "Downy Woodpecker",
+            "Hairy Woodpecker",
+            "Yellow-bellied Sapsucker",
+            "Northern Flicker",
+            "Pileated Woodpecker",
+            "Red-bellied Woodpecker",
+            "Red-headed Woodpecker",
+        ]
+        n = len(woodpeckers)
+        names_sql = ", ".join(f"'{w}'" for w in woodpeckers)
+
+        if year is not None:
+            title = f"{year} Woodpecker Clean Sweeps"
+            subtitle = str(year)
+            year_filter = f"AND extract(year from OBSERVATION_DATE) = {year}"
+            # Per-checklist view for current year, sorted by date
+            sql = f"""
+select
+    get_observer_name(t.observer_id) as "Observer",
+    min(OBSERVATION_DATE) as "Date",
+    min(locality) as "Locality",
+    concat('https://ebird.org/checklist/', min(SAMPLING_EVENT_IDENTIFIER)) as "_Url1"
+from (
+    select distinct OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, OBSERVATION_DATE, locality, COMMON_NAME
+    from ebird
+    where {region_where_clause}
+    and common_name in ({names_sql})
+    and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
+    and not (approved = 'f' and reviewed = 't')
+    and (exotic_code is null or exotic_code in ('N'))
+    and observation_date <= '{as_of}'
+    {year_filter}
+) t
+group by observer_id, SAMPLING_EVENT_IDENTIFIER
+having count(distinct t.common_name) = {n}
+order by min(OBSERVATION_DATE)
+limit {limit};
+"""
+        else:
+            title = "All-Time Woodpecker Clean Sweeps"
+            subtitle = "All Time"
+            # Aggregate by observer: count lifetime sweeps + last sweep date (linked)
+            sql = f"""
+select
+    get_observer_name(sweeps.observer_id) as "Observer",
+    count(*) as "Count",
+    max(sweeps.sweep_date) as "Last Date",
+    concat('https://ebird.org/checklist/',
+           (array_agg(sweeps.SAMPLING_EVENT_IDENTIFIER order by sweeps.sweep_date desc))[1]
+    ) as "_Url2"
+from (
+    select observer_id, SAMPLING_EVENT_IDENTIFIER, min(OBSERVATION_DATE) as sweep_date
+    from (
+        select distinct OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, OBSERVATION_DATE, COMMON_NAME
+        from ebird
+        where {region_where_clause}
+        and common_name in ({names_sql})
+        and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
+        and not (approved = 'f' and reviewed = 't')
+        and (exotic_code is null or exotic_code in ('N'))
+        and observation_date <= '{as_of}'
+    ) t
+    group by observer_id, SAMPLING_EVENT_IDENTIFIER
+    having count(distinct t.common_name) = {n}
+) sweeps
+group by sweeps.observer_id
+order by count(*) desc, max(sweeps.sweep_date) desc
+limit {limit};
+"""
+
+        logger.debug(f"Generating {title}...")
+        a, b = execute_query(sql)
+        return title, subtitle, None, a, b
+
+    @staticmethod
+    def warbler_single_list(region_where_clause, as_of, year=None, limit=20):
+        warbler_filter = """(
+            common_name like '% Warbler'
+            or common_name like '% Parula'
+            or common_name like '% Redstart'
+            or common_name like '% Yellowthroat'
+            or common_name like '% Waterthrush'
+            or common_name = 'Ovenbird'
+        )"""
+
+        if year is not None:
+            title = f"{year} Warbler-a-palooza"
+            subtitle = str(year)
+            year_filter = f"AND extract(year from OBSERVATION_DATE) = {year}"
+        else:
+            title = "All-Time Warbler-a-palooza"
+            subtitle = "All Time"
+            year_filter = ""
+
+        sql = f"""
+select
+    get_observer_name(t.observer_id) as "Observer",
+    min(OBSERVATION_DATE) as "Date",
+    min(locality) as "Locality",
+    concat('https://ebird.org/checklist/', min(SAMPLING_EVENT_IDENTIFIER)) as "_Url1",
+    count(t.common_name) as "Warblers"
+from (
+    select distinct OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, OBSERVATION_DATE, locality, COMMON_NAME
+    from ebird
+    where {region_where_clause}
+    and {warbler_filter}
+    and (category = 'species' or category = 'issf' or category = 'form' or common_name = 'Rock Pigeon')
+    and not (approved = 'f' and reviewed = 't')
+    and (exotic_code is null or exotic_code in ('N'))
+    and observation_date <= '{as_of}'
+    {year_filter}
+) t
+group by observer_id, SAMPLING_EVENT_IDENTIFIER
+order by count(t.common_name) desc
+limit {limit};
 """
         logger.debug(f"Generating {title}...")
         a, b = execute_query(sql)

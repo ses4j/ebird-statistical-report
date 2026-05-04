@@ -23,7 +23,7 @@ CREATE DATABASE "ebirddb" WITH ENCODING 'UTF8' TEMPLATE=template0;
 \c "ebirddb"
 
 DO $$
-DECLARE ebird_export_path CONSTANT VARCHAR := 'C:\ebird-tablespace\ebd_US-DC_prv_relDec-2022\ebd_US-DC_prv_relDec-2022.txt';
+DECLARE ebird_export_path CONSTANT VARCHAR := 'C:\ebird-tablespace\ebd_US-DC_unv_smp_relDec-2025\ebd_US-DC_unv_smp_relDec-2025.txt';
 -- DECLARE ebird_export_path CONSTANT VARCHAR := '/mnt/import-data/ebd_US-MD_prv_relDec-2020/ebd_US-MD_prv_relDec-2020.txt';
 BEGIN
 
@@ -73,9 +73,16 @@ CREATE TABLE "ebird"
     SPECIES_COMMENTS             text
 );
 
+-- Skipped columns (not captured):
+--   5: TAXON CONCEPT ID       9: SUBSPECIES SCIENTIFIC NAME  15: AGE/SEX
+--  22: IBA CODE              23: BCR CODE                   24: USFWS CODE
+--  36: OBSERVATION TYPE
+-- Newly added in this format version (not captured):
+--  34: OBSERVER ORCID ID     37: PROTOCOL NAME              39: PROJECT NAMES
+--  (PROJECT_CODE maps to col 40: PROJECT IDENTIFIERS, the code-bearing half of the old PROJECT CODE split)
 EXECUTE( 'COPY "ebird" ' ||
          '(GLOBAL_UNIQUE_IDENTIFIER, LAST_EDITED_DATE, TAXONOMIC_ORDER, CATEGORY, COMMON_NAME, SCIENTIFIC_NAME, SUBSPECIES_COMMON_NAME, EXOTIC_CODE, OBSERVATION_COUNT_STR, BREEDING_CODE, BREEDING_CATEGORY, BEHAVIOR_CODE, COUNTRY, COUNTRY_CODE, STATE, STATE_CODE, COUNTY, COUNTY_CODE, ATLAS_BLOCK, LOCALITY, LOCALITY_ID, LOCALITY_TYPE, LATITUDE, LONGITUDE, OBSERVATION_DATE, TIME_OBSERVATIONS_STARTED, OBSERVER_ID, SAMPLING_EVENT_IDENTIFIER, PROTOCOL_CODE, PROJECT_CODE, DURATION_MINUTES, EFFORT_DISTANCE_KM, EFFORT_AREA_HA, NUMBER_OBSERVERS, ALL_SPECIES_REPORTED, GROUP_IDENTIFIER, HAS_MEDIA, APPROVED, REVIEWED, REASON, TRIP_COMMENTS, SPECIES_COMMENTS) ' ||
-         'FROM PROGRAM ''cut -f 1,2,3,4,6,7,8,10,11,12,13,14,16,17,18,19,20,21,25,26,27,28,29,30,31,32,33,34,36,37,38,39,40,41,42,43,44,45,46,47,48,49 ' || ebird_export_path || '''' ||
+         'FROM PROGRAM ''cut -f 1,2,3,4,6,7,8,10,11,12,13,14,16,17,18,19,20,21,25,26,27,28,29,30,31,32,33,35,38,40,41,42,43,44,45,46,47,48,49,50,51,52 ' || ebird_export_path || '''' ||
          ' WITH (FORMAT CSV, HEADER, QUOTE E''\5'', ENCODING ''UTF8'', DELIMITER E''\t'')');
 
 END $$;
@@ -110,15 +117,3 @@ create index ebird_observer_idx ON "ebird" (observer_id asc);
 CREATE INDEX ON "ebird" (sampling_event_identifier);
 
 VACUUM ANALYZE "ebird";
-
-CREATE or REPLACE FUNCTION get_observer_name(varchar) RETURNS varchar AS
-$$
-select case $1
-    WHEN 'obsr676032' THEN 'Scott Stafford'
-    else concat('unknown (', $1, ')')
-    end
-$$
-    LANGUAGE SQL
-    IMMUTABLE
-    RETURNS NULL ON NULL INPUT;
-
